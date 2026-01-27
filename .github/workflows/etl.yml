@@ -22,20 +22,16 @@ jobs:
       - name: Install dependencies
         run: |
           cd etl
-          pip install google-cloud-bigquery supabase python-dotenv requests
+          pip install supabase python-dotenv requests
 
-      - name: Create GCP credentials file
-        run: |
-          echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-key.json
-
-      - name: Run ETL
+      - name: Fetch issues from GitHub API
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           cd etl
-          python fetch_issues.py
+          python fetch_issues_github.py
 
       - name: Enrich repos
         env:
@@ -55,8 +51,3 @@ jobs:
           cd etl
           python refresh_stats.py || echo "Refresh skipped"
         continue-on-error: true
-
-      - name: Cleanup
-        if: always()
-        run: |
-          rm -f /tmp/gcp-key.json
