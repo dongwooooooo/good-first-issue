@@ -1,0 +1,8 @@
+# BigQuery
+google-cloud-bigquery>=3.0.0
+
+# Supabase
+supabase>=2.0.0
+
+# Utils
+python-dotenv>=1.0.0

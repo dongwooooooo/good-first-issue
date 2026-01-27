@@ -1,0 +1,62 @@
+name: Daily ETL
+
+on:
+  schedule:
+    # 매일 UTC 00:00 (KST 09:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          cd etl
+          pip install google-cloud-bigquery supabase python-dotenv requests
+
+      - name: Create GCP credentials file
+        run: |
+          echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-key.json
+
+      - name: Run ETL
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          cd etl
+          python fetch_issues.py
+
+      - name: Enrich repos
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          cd etl
+          python enrich_repos.py || echo "Enrichment skipped or failed"
+        continue-on-error: true
+
+      - name: Refresh Materialized Views
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          cd etl
+          python refresh_stats.py || echo "Refresh skipped"
+        continue-on-error: true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f /tmp/gcp-key.json

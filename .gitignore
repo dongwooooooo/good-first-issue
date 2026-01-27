@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# Build
+.next/
+out/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Google Cloud SDK (too large)
+etl/google-cloud-sdk/
+
+# Temp
+/tmp/
+*.tmp
+
+# Credentials
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
