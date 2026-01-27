@@ -136,3 +136,48 @@ GRANT EXECUTE ON FUNCTION refresh_stats TO authenticated;
 REFRESH MATERIALIZED VIEW repo_stats;
 REFRESH MATERIALIZED VIEW org_stats;
 REFRESH MATERIALIZED VIEW language_stats;
+
+
+-- 9. Autocomplete function
+-- ============================================
+
+CREATE OR REPLACE FUNCTION search_autocomplete(search_term text, max_results int DEFAULT 10)
+RETURNS TABLE (
+    type text,
+    value text,
+    display text,
+    count bigint
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    -- Repos matching
+    SELECT 
+        'repo'::text as type,
+        r.repo_full_name as value,
+        r.repo_full_name || ' (' || r.issue_count || ' issues)' as display,
+        r.issue_count::bigint as count
+    FROM repo_stats r
+    WHERE r.repo_full_name ILIKE '%' || search_term || '%'
+       OR similarity(r.repo_full_name, search_term) > 0.3
+    ORDER BY r.issue_count DESC
+    LIMIT max_results / 2
+
+    UNION ALL
+
+    -- Orgs matching
+    SELECT 
+        'org'::text as type,
+        o.org_name as value,
+        o.org_name || ' (' || o.repo_count || ' repos)' as display,
+        o.issue_count::bigint as count
+    FROM org_stats o
+    WHERE o.org_name ILIKE '%' || search_term || '%'
+       OR similarity(o.org_name, search_term) > 0.3
+    ORDER BY o.issue_count DESC
+    LIMIT max_results / 2;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION search_autocomplete TO anon, authenticated;

@@ -1,14 +1,17 @@
-name: Daily ETL
+name: ETL Sync
 
 on:
   schedule:
-    # 매일 UTC 00:00 (KST 09:00)
-    - cron: '0 0 * * *'
+    # 매 2시간마다 (UTC)
+    - cron: '0 */2 * * *'
   workflow_dispatch: # 수동 실행 가능
 
 jobs:
   etl:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Workload Identity Federation에 필요
 
     steps:
       - name: Checkout
@@ -22,18 +25,24 @@ jobs:
       - name: Install dependencies
         run: |
           cd etl
-          pip install supabase python-dotenv requests
+          pip install google-cloud-bigquery supabase python-dotenv requests
 
-      - name: Fetch issues from GitHub API
+      # Workload Identity Federation으로 GCP 인증
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Run ETL (GitHub Archive -> Supabase)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           cd etl
-          python fetch_issues_github.py
+          python fetch_issues.py
 
-      - name: Enrich repos
+      - name: Enrich repos with GitHub API
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

@@ -1,11 +1,11 @@
 """
-GoodFirst ETL: BigQuery -> Supabase
-하루에 한 번 실행하여 새로운 good first issue를 가져옴
+GoodFirst ETL: BigQuery (GitHub Archive) -> Supabase
+매 2시간마다 실행하여 good first issue 동기화
 """
 
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from google.cloud import bigquery
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -21,47 +21,72 @@ supabase: Client = create_client(
 # BigQuery 클라이언트
 bq_client = bigquery.Client()
 
+# 설정
+SYNC_HOURS = 3  # 최근 N시간 이벤트 조회 (2시간 주기 + 여유분)
+RETENTION_DAYS = 365  # 데이터 보관 기간
 
-def fetch_good_first_issues(date_str: str = None) -> list[dict]:
-    """
-    특정 날짜의 good first issue를 BigQuery에서 가져옴
 
-    Args:
-        date_str: YYYYMMDD 형식 (없으면 어제 날짜)
+def get_table_name(dt: datetime) -> str:
+    """BigQuery 테이블 이름 생성 (githubarchive.day.YYYYMMDD)"""
+    return f"githubarchive.day.{dt.strftime('%Y%m%d')}"
+
+
+def fetch_recent_issues(hours: int = SYNC_HOURS) -> list[dict]:
     """
-    if not date_str:
-        yesterday = datetime.now() - timedelta(days=1)
-        date_str = yesterday.strftime("%Y%m%d")
+    최근 N시간 내 생성/라벨링된 good first issue 가져오기
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=hours)
+
+    # 오늘과 어제 테이블 모두 조회 (자정 전후 이벤트 커버)
+    tables = []
+    for days_ago in range(2):  # 오늘, 어제
+        dt = now - timedelta(days=days_ago)
+        tables.append(get_table_name(dt))
+
+    table_union = " UNION ALL ".join([
+        f"SELECT * FROM `{t}`" for t in tables
+    ])
 
     query = f"""
+    WITH events AS ({table_union})
     SELECT
         repo.name as repo_name,
+        JSON_EXTRACT_SCALAR(payload, '$.issue.id') as github_id,
         JSON_EXTRACT_SCALAR(payload, '$.issue.number') as issue_number,
         JSON_EXTRACT_SCALAR(payload, '$.issue.title') as title,
         JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url,
         JSON_EXTRACT_SCALAR(payload, '$.issue.user.login') as author,
         JSON_EXTRACT(payload, '$.issue.labels') as labels_json,
         JSON_EXTRACT_SCALAR(payload, '$.issue.created_at') as created_at,
+        JSON_EXTRACT_SCALAR(payload, '$.issue.comments') as comment_count,
         created_at as event_at
-    FROM `githubarchive.day.{date_str}`
+    FROM events
     WHERE type = 'IssuesEvent'
-      AND JSON_EXTRACT_SCALAR(payload, '$.action') IN ('opened', 'labeled')
+      AND created_at >= TIMESTAMP('{cutoff.isoformat()}')
+      AND JSON_EXTRACT_SCALAR(payload, '$.action') IN ('opened', 'labeled', 'reopened')
       AND JSON_EXTRACT_SCALAR(payload, '$.issue.state') = 'open'
       AND (
         LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%good first issue%'
         OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%good-first-issue%'
         OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%beginner%'
-        OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%help wanted%'
+        OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%first-timers-only%'
       )
     """
 
-    print(f"Fetching issues for {date_str}...")
-    query_job = bq_client.query(query)
-    results = query_job.result()
+    print(f"Fetching issues from last {hours} hours...")
+    print(f"  Tables: {tables}")
+    print(f"  Cutoff: {cutoff.isoformat()}")
+
+    try:
+        query_job = bq_client.query(query)
+        results = query_job.result()
+    except Exception as e:
+        print(f"BigQuery error: {e}")
+        return []
 
     issues = []
     for row in results:
-        # labels 파싱
         labels = []
         if row.labels_json:
             try:
@@ -70,166 +95,209 @@ def fetch_good_first_issues(date_str: str = None) -> list[dict]:
             except json.JSONDecodeError:
                 pass
 
-        # repo에서 언어 추출 시도 (별도 API 필요할 수 있음)
         repo_parts = row.repo_name.split("/")
         owner = repo_parts[0] if len(repo_parts) > 0 else ""
         repo = repo_parts[1] if len(repo_parts) > 1 else row.repo_name
 
         issues.append({
+            "github_id": int(row.github_id) if row.github_id else None,
+            "number": int(row.issue_number) if row.issue_number else 0,
             "repo_full_name": row.repo_name,
             "repo_owner": owner,
             "repo_name": repo,
-            "issue_number": int(row.issue_number) if row.issue_number else 0,
-            "title": row.title,
+            "title": row.title[:500] if row.title else "",
             "url": row.url,
-            "author": row.author,
-            "labels": labels,
+            "labels": ",".join(labels),
             "created_at": row.created_at,
-            "fetched_at": datetime.now().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "comment_count": int(row.comment_count) if row.comment_count else 0,
             "is_open": True
         })
 
-    # 중복 제거 (같은 이슈가 opened/labeled로 여러 번 나올 수 있음)
+    # 중복 제거
     seen = set()
     unique_issues = []
     for issue in issues:
-        if issue["url"] not in seen:
-            seen.add(issue["url"])
+        key = issue["url"] or issue["github_id"]
+        if key and key not in seen:
+            seen.add(key)
             unique_issues.append(issue)
 
-    print(f"Found {len(unique_issues)} unique issues (from {len(issues)} events)")
+    print(f"  Found {len(unique_issues)} unique issues")
     return unique_issues
 
 
-def upsert_to_supabase(issues: list[dict]) -> int:
+def fetch_closed_issues(hours: int = SYNC_HOURS) -> list[str]:
     """
-    Supabase에 이슈 저장 (중복 방지를 위해 upsert)
+    최근 N시간 내 닫힌 이슈 URL 가져오기
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=hours)
 
-    Returns:
-        저장된 이슈 수
+    tables = []
+    for days_ago in range(2):
+        dt = now - timedelta(days=days_ago)
+        tables.append(get_table_name(dt))
+
+    table_union = " UNION ALL ".join([
+        f"SELECT * FROM `{t}`" for t in tables
+    ])
+
+    query = f"""
+    WITH events AS ({table_union})
+    SELECT DISTINCT
+        JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url
+    FROM events
+    WHERE type = 'IssuesEvent'
+      AND created_at >= TIMESTAMP('{cutoff.isoformat()}')
+      AND JSON_EXTRACT_SCALAR(payload, '$.action') = 'closed'
     """
+
+    print(f"Fetching closed issues from last {hours} hours...")
+
+    try:
+        query_job = bq_client.query(query)
+        results = query_job.result()
+        urls = [row.url for row in results if row.url]
+        print(f"  Found {len(urls)} closed issues")
+        return urls
+    except Exception as e:
+        print(f"BigQuery error: {e}")
+        return []
+
+
+def fetch_unlabeled_issues(hours: int = SYNC_HOURS) -> list[str]:
+    """
+    최근 N시간 내 good first issue 라벨이 제거된 이슈 URL 가져오기
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=hours)
+
+    tables = []
+    for days_ago in range(2):
+        dt = now - timedelta(days=days_ago)
+        tables.append(get_table_name(dt))
+
+    table_union = " UNION ALL ".join([
+        f"SELECT * FROM `{t}`" for t in tables
+    ])
+
+    query = f"""
+    WITH events AS ({table_union})
+    SELECT DISTINCT
+        JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url
+    FROM events
+    WHERE type = 'IssuesEvent'
+      AND created_at >= TIMESTAMP('{cutoff.isoformat()}')
+      AND JSON_EXTRACT_SCALAR(payload, '$.action') = 'unlabeled'
+      AND (
+        LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%good first issue%'
+        OR LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%good-first-issue%'
+        OR LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%beginner%'
+        OR LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%first-timers-only%'
+      )
+    """
+
+    print(f"Fetching unlabeled issues from last {hours} hours...")
+
+    try:
+        query_job = bq_client.query(query)
+        results = query_job.result()
+        urls = [row.url for row in results if row.url]
+        print(f"  Found {len(urls)} unlabeled issues")
+        return urls
+    except Exception as e:
+        print(f"BigQuery error: {e}")
+        return []
+
+
+def upsert_issues(issues: list[dict]) -> int:
+    """이슈를 DB에 upsert"""
     if not issues:
         return 0
 
-    # url을 unique key로 사용하여 upsert
-    result = supabase.table("issues").upsert(
-        issues,
-        on_conflict="url"
-    ).execute()
+    batch_size = 100
+    total = 0
 
-    return len(result.data) if result.data else 0
+    for i in range(0, len(issues), batch_size):
+        batch = issues[i:i + batch_size]
+        try:
+            result = supabase.table("issues").upsert(
+                batch,
+                on_conflict="github_id"
+            ).execute()
+            total += len(result.data) if result.data else 0
+        except Exception as e:
+            print(f"  Upsert error: {e}")
+
+    return total
 
 
-def fetch_issue_state_changes(date_str: str = None) -> dict:
+def delete_issues(urls: list[str]) -> int:
+    """이슈 삭제"""
+    if not urls:
+        return 0
+
+    batch_size = 100
+    total = 0
+
+    for i in range(0, len(urls), batch_size):
+        batch = urls[i:i + batch_size]
+        try:
+            result = supabase.table("issues").delete().in_("url", batch).execute()
+            total += len(result.data) if result.data else 0
+        except Exception as e:
+            print(f"  Delete error: {e}")
+
+    return total
+
+
+def cleanup_old_issues(days: int = RETENTION_DAYS):
     """
-    이슈 상태 변경 이벤트 가져오기 (closed, reopened, unlabeled)
+    N일 이상 된 이슈 삭제 (open/closed 무관)
     """
-    if not date_str:
-        yesterday = datetime.now() - timedelta(days=1)
-        date_str = yesterday.strftime("%Y%m%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
-    query = f"""
-    SELECT
-        JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url,
-        JSON_EXTRACT_SCALAR(payload, '$.action') as action,
-        JSON_EXTRACT_SCALAR(payload, '$.label.name') as label_name
-    FROM `githubarchive.day.{date_str}`
-    WHERE type = 'IssuesEvent'
-      AND JSON_EXTRACT_SCALAR(payload, '$.action') IN ('closed', 'reopened', 'unlabeled')
-    """
+    try:
+        result = supabase.table("issues") \
+            .delete() \
+            .lt("created_at", cutoff) \
+            .execute()
 
-    print(f"Fetching state changes for {date_str}...")
-    query_job = bq_client.query(query)
-    results = query_job.result()
-
-    changes = {"closed": [], "reopened": [], "unlabeled": []}
-
-    for row in results:
-        if not row.url:
-            continue
-        if row.action == 'closed':
-            changes["closed"].append(row.url)
-        elif row.action == 'reopened':
-            changes["reopened"].append(row.url)
-        elif row.action == 'unlabeled':
-            # good first issue 관련 라벨이 제거된 경우만
-            label = (row.label_name or "").lower()
-            if any(x in label for x in ['good first issue', 'good-first-issue', 'beginner', 'help wanted']):
-                changes["unlabeled"].append(row.url)
-
-    # 중복 제거
-    for key in changes:
-        changes[key] = list(set(changes[key]))
-
-    print(f"  closed: {len(changes['closed'])}, reopened: {len(changes['reopened'])}, unlabeled: {len(changes['unlabeled'])}")
-    return changes
-
-
-def apply_state_changes(changes: dict) -> dict:
-    """
-    상태 변경 적용
-    - closed → is_open = false
-    - reopened → is_open = true
-    - unlabeled → 삭제 (더 이상 good first issue 아님)
-    """
-    results = {"closed": 0, "reopened": 0, "deleted": 0}
-
-    # closed 처리
-    for i in range(0, len(changes["closed"]), 100):
-        batch = changes["closed"][i:i+100]
-        result = supabase.table("issues").update({"is_open": False}).in_("url", batch).execute()
-        results["closed"] += len(result.data) if result.data else 0
-
-    # reopened 처리
-    for i in range(0, len(changes["reopened"]), 100):
-        batch = changes["reopened"][i:i+100]
-        result = supabase.table("issues").update({"is_open": True}).in_("url", batch).execute()
-        results["reopened"] += len(result.data) if result.data else 0
-
-    # unlabeled 처리 (삭제)
-    for i in range(0, len(changes["unlabeled"]), 100):
-        batch = changes["unlabeled"][i:i+100]
-        result = supabase.table("issues").delete().in_("url", batch).execute()
-        results["deleted"] += len(result.data) if result.data else 0
-
-    return results
-
-
-def cleanup_old_closed_issues(days: int = 365):
-    """
-    1년 이상 된 closed 이슈만 삭제 (open은 유지)
-    """
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-
-    result = supabase.table("issues") \
-        .delete() \
-        .lt("created_at", cutoff) \
-        .eq("is_open", False) \
-        .execute()
-
-    deleted = len(result.data) if result.data else 0
-    print(f"Cleaned up {deleted} closed issues older than {days} days")
+        deleted = len(result.data) if result.data else 0
+        print(f"Cleaned up {deleted} issues older than {days} days")
+        return deleted
+    except Exception as e:
+        print(f"Cleanup error: {e}")
+        return 0
 
 
 def main():
     """메인 ETL 실행"""
     print("=" * 50)
-    print(f"GoodFirst ETL - {datetime.now().isoformat()}")
+    print(f"GoodFirst ETL - {datetime.now(timezone.utc).isoformat()}")
+    print(f"Sync: last {SYNC_HOURS} hours | Retention: {RETENTION_DAYS} days")
     print("=" * 50)
 
-    # 1. 새 이슈 가져오기
-    issues = fetch_good_first_issues()
-    saved = upsert_to_supabase(issues)
-    print(f"Saved {saved} new issues")
+    # 1. 새 이슈 / 재오픈된 이슈 가져오기
+    issues = fetch_recent_issues()
+    saved = upsert_issues(issues)
+    print(f"✓ Upserted {saved} issues")
 
-    # 2. 상태 변경 동기화
-    changes = fetch_issue_state_changes()
-    results = apply_state_changes(changes)
-    print(f"State updates - closed: {results['closed']}, reopened: {results['reopened']}, deleted: {results['deleted']}")
+    # 2. 닫힌 이슈 삭제
+    closed_urls = fetch_closed_issues()
+    deleted_closed = delete_issues(closed_urls)
+    print(f"✓ Deleted {deleted_closed} closed issues")
 
-    # 3. 1년 이상 된 closed 이슈만 삭제
-    cleanup_old_closed_issues(365)
+    # 3. 라벨 제거된 이슈 삭제
+    unlabeled_urls = fetch_unlabeled_issues()
+    deleted_unlabeled = delete_issues(unlabeled_urls)
+    print(f"✓ Deleted {deleted_unlabeled} unlabeled issues")
 
+    # 4. 1년 이상 된 이슈 정리
+    cleanup_old_issues()
+
+    print("=" * 50)
     print("ETL complete!")
 
 
