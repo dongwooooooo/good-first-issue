@@ -23,6 +23,7 @@ bq_client = bigquery.Client()
 
 # 설정
 RETENTION_DAYS = 365  # 데이터 보관 기간
+INITIAL_LOAD_DAYS = 30  # 초기 로드 시 가져올 기간 (BigQuery 쿼터 제한)
 MIN_SYNC_HOURS = 3  # 최소 동기화 범위 (여유분)
 
 
@@ -32,24 +33,24 @@ def get_table_name(dt: datetime) -> str:
 
 
 def get_last_sync_time() -> datetime:
-    """DB에서 마지막 동기화 시점 조회"""
+    """DB에서 마지막 이슈 생성 시점 조회"""
     try:
         result = supabase.table("issues") \
-            .select("updated_at") \
-            .order("updated_at", desc=True) \
+            .select("created_at") \
+            .order("created_at", desc=True) \
             .limit(1) \
             .execute()
 
-        if result.data and result.data[0].get("updated_at"):
-            last_sync = datetime.fromisoformat(result.data[0]["updated_at"].replace("Z", "+00:00"))
-            print(f"Last sync time from DB: {last_sync.isoformat()}")
+        if result.data and result.data[0].get("created_at"):
+            last_sync = datetime.fromisoformat(result.data[0]["created_at"].replace("Z", "+00:00"))
+            print(f"Last issue time from DB: {last_sync.isoformat()}")
             return last_sync
     except Exception as e:
         print(f"Error getting last sync time: {e}")
 
-    # 데이터 없으면 1년 전부터 (초기 로드)
-    initial = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
-    print(f"No previous data, starting from: {initial.isoformat()}")
+    # 데이터 없으면 30일 전부터 (초기 로드 - BigQuery 쿼터 제한)
+    initial = datetime.now(timezone.utc) - timedelta(days=INITIAL_LOAD_DAYS)
+    print(f"No previous data, initial load from: {initial.isoformat()} ({INITIAL_LOAD_DAYS} days)")
     return initial
 
 
