@@ -22,8 +22,8 @@ supabase: Client = create_client(
 bq_client = bigquery.Client()
 
 # 설정
-SYNC_HOURS = 3  # 최근 N시간 이벤트 조회 (2시간 주기 + 여유분)
 RETENTION_DAYS = 365  # 데이터 보관 기간
+MIN_SYNC_HOURS = 3  # 최소 동기화 범위 (여유분)
 
 
 def get_table_name(dt: datetime) -> str:
@@ -31,18 +31,50 @@ def get_table_name(dt: datetime) -> str:
     return f"githubarchive.day.{dt.strftime('%Y%m%d')}"
 
 
-def fetch_recent_issues(hours: int = SYNC_HOURS) -> list[dict]:
+def get_last_sync_time() -> datetime:
+    """DB에서 마지막 동기화 시점 조회"""
+    try:
+        result = supabase.table("issues") \
+            .select("updated_at") \
+            .order("updated_at", desc=True) \
+            .limit(1) \
+            .execute()
+
+        if result.data and result.data[0].get("updated_at"):
+            last_sync = datetime.fromisoformat(result.data[0]["updated_at"].replace("Z", "+00:00"))
+            print(f"Last sync time from DB: {last_sync.isoformat()}")
+            return last_sync
+    except Exception as e:
+        print(f"Error getting last sync time: {e}")
+
+    # 데이터 없으면 1년 전부터 (초기 로드)
+    initial = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    print(f"No previous data, starting from: {initial.isoformat()}")
+    return initial
+
+
+def get_tables_for_range(start: datetime, end: datetime) -> list[str]:
+    """시간 범위에 해당하는 BigQuery 테이블 목록"""
+    tables = []
+    current = start.date()
+    end_date = end.date()
+
+    while current <= end_date:
+        tables.append(f"githubarchive.day.{current.strftime('%Y%m%d')}")
+        current += timedelta(days=1)
+
+    return tables
+
+
+def fetch_recent_issues(cutoff: datetime) -> list[dict]:
     """
-    최근 N시간 내 생성/라벨링된 good first issue 가져오기
+    cutoff 시점 이후 생성/라벨링된 good first issue 가져오기
     """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=hours)
 
-    # 오늘과 어제 테이블 모두 조회 (자정 전후 이벤트 커버)
-    tables = []
-    for days_ago in range(2):  # 오늘, 어제
-        dt = now - timedelta(days=days_ago)
-        tables.append(get_table_name(dt))
+    # cutoff부터 현재까지의 테이블 목록
+    tables = get_tables_for_range(cutoff, now)
+    print(f"  Querying {len(tables)} tables: {tables[0]} ~ {tables[-1]}")
 
     table_union = " UNION ALL ".join([
         f"SELECT * FROM `{t}`" for t in tables
@@ -74,9 +106,7 @@ def fetch_recent_issues(hours: int = SYNC_HOURS) -> list[dict]:
       )
     """
 
-    print(f"Fetching issues from last {hours} hours...")
-    print(f"  Tables: {tables}")
-    print(f"  Cutoff: {cutoff.isoformat()}")
+    print(f"Fetching issues since {cutoff.isoformat()}...")
 
     try:
         query_job = bq_client.query(query)
@@ -127,17 +157,12 @@ def fetch_recent_issues(hours: int = SYNC_HOURS) -> list[dict]:
     return unique_issues
 
 
-def fetch_closed_issues(hours: int = SYNC_HOURS) -> list[str]:
+def fetch_closed_issues(cutoff: datetime) -> list[str]:
     """
-    최근 N시간 내 닫힌 이슈 URL 가져오기
+    cutoff 시점 이후 닫힌 이슈 URL 가져오기
     """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=hours)
-
-    tables = []
-    for days_ago in range(2):
-        dt = now - timedelta(days=days_ago)
-        tables.append(get_table_name(dt))
+    tables = get_tables_for_range(cutoff, now)
 
     table_union = " UNION ALL ".join([
         f"SELECT * FROM `{t}`" for t in tables
@@ -153,7 +178,7 @@ def fetch_closed_issues(hours: int = SYNC_HOURS) -> list[str]:
       AND JSON_EXTRACT_SCALAR(payload, '$.action') = 'closed'
     """
 
-    print(f"Fetching closed issues from last {hours} hours...")
+    print(f"Fetching closed issues since {cutoff.isoformat()}...")
 
     try:
         query_job = bq_client.query(query)
@@ -166,17 +191,12 @@ def fetch_closed_issues(hours: int = SYNC_HOURS) -> list[str]:
         return []
 
 
-def fetch_unlabeled_issues(hours: int = SYNC_HOURS) -> list[str]:
+def fetch_unlabeled_issues(cutoff: datetime) -> list[str]:
     """
-    최근 N시간 내 good first issue 라벨이 제거된 이슈 URL 가져오기
+    cutoff 시점 이후 good first issue 라벨이 제거된 이슈 URL 가져오기
     """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=hours)
-
-    tables = []
-    for days_ago in range(2):
-        dt = now - timedelta(days=days_ago)
-        tables.append(get_table_name(dt))
+    tables = get_tables_for_range(cutoff, now)
 
     table_union = " UNION ALL ".join([
         f"SELECT * FROM `{t}`" for t in tables
@@ -198,7 +218,7 @@ def fetch_unlabeled_issues(hours: int = SYNC_HOURS) -> list[str]:
       )
     """
 
-    print(f"Fetching unlabeled issues from last {hours} hours...")
+    print(f"Fetching unlabeled issues since {cutoff.isoformat()}...")
 
     try:
         query_job = bq_client.query(query)
@@ -276,21 +296,31 @@ def main():
     """메인 ETL 실행"""
     print("=" * 50)
     print(f"GoodFirst ETL - {datetime.now(timezone.utc).isoformat()}")
-    print(f"Sync: last {SYNC_HOURS} hours | Retention: {RETENTION_DAYS} days")
     print("=" * 50)
 
+    # DB에서 마지막 동기화 시점 조회
+    last_sync = get_last_sync_time()
+    now = datetime.now(timezone.utc)
+
+    # 최소 3시간 여유분 확보 (이벤트 지연 대비)
+    min_cutoff = now - timedelta(hours=MIN_SYNC_HOURS)
+    cutoff = min(last_sync, min_cutoff)
+
+    days_to_sync = (now - cutoff).days
+    print(f"Syncing from: {cutoff.isoformat()} ({days_to_sync} days)")
+
     # 1. 새 이슈 / 재오픈된 이슈 가져오기
-    issues = fetch_recent_issues()
+    issues = fetch_recent_issues(cutoff)
     saved = upsert_issues(issues)
     print(f"✓ Upserted {saved} issues")
 
     # 2. 닫힌 이슈 삭제
-    closed_urls = fetch_closed_issues()
+    closed_urls = fetch_closed_issues(cutoff)
     deleted_closed = delete_issues(closed_urls)
     print(f"✓ Deleted {deleted_closed} closed issues")
 
     # 3. 라벨 제거된 이슈 삭제
-    unlabeled_urls = fetch_unlabeled_issues()
+    unlabeled_urls = fetch_unlabeled_issues(cutoff)
     deleted_unlabeled = delete_issues(unlabeled_urls)
     print(f"✓ Deleted {deleted_unlabeled} unlabeled issues")
 
