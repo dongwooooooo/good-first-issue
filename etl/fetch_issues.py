@@ -1,12 +1,14 @@
 """
 GoodFirst ETL: BigQuery (GitHub Archive) -> Supabase
 매 2시간마다 실행하여 good first issue 동기화
+- 프로젝트 폴백 지원: 쿼터 초과 시 자동 전환
 """
 
 import os
 import json
 from datetime import datetime, timedelta, timezone
 from google.cloud import bigquery
+from google.api_core.exceptions import Forbidden
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -18,8 +20,32 @@ supabase: Client = create_client(
     os.environ["SUPABASE_KEY"]
 )
 
-# BigQuery 클라이언트
-bq_client = bigquery.Client()
+# GCP 프로젝트 목록 (폴백 지원)
+GCP_PROJECTS = [
+    os.environ.get("GCP_PROJECT_PRIMARY", "silver-pen-391310"),
+    os.environ.get("GCP_PROJECT_FALLBACK", "dogwood-dryad-485405-k8"),
+]
+
+# 현재 사용 중인 BigQuery 클라이언트
+bq_client = None
+current_project_idx = 0
+
+
+def get_bq_client(force_next: bool = False) -> bigquery.Client:
+    """BigQuery 클라이언트 반환 (폴백 지원)"""
+    global bq_client, current_project_idx
+
+    if force_next:
+        current_project_idx = (current_project_idx + 1) % len(GCP_PROJECTS)
+
+    project = GCP_PROJECTS[current_project_idx]
+    print(f"Using GCP project: {project}")
+    bq_client = bigquery.Client(project=project)
+    return bq_client
+
+
+# 초기 클라이언트 생성
+bq_client = get_bq_client()
 
 # 설정
 RETENTION_DAYS = 365  # 데이터 보관 기간
@@ -52,6 +78,26 @@ def get_last_sync_time() -> datetime:
     initial = datetime.now(timezone.utc) - timedelta(days=INITIAL_LOAD_DAYS)
     print(f"No previous data, initial load from: {initial.isoformat()} ({INITIAL_LOAD_DAYS} days)")
     return initial
+
+
+def run_query_with_fallback(query: str):
+    """쿼리 실행 (쿼터 초과 시 폴백 프로젝트로 재시도)"""
+    global bq_client
+
+    for attempt in range(len(GCP_PROJECTS)):
+        try:
+            query_job = bq_client.query(query)
+            return query_job.result()
+        except Forbidden as e:
+            if "quota" in str(e).lower() and attempt < len(GCP_PROJECTS) - 1:
+                print(f"Quota exceeded, switching to fallback project...")
+                bq_client = get_bq_client(force_next=True)
+            else:
+                raise e
+        except Exception as e:
+            raise e
+
+    return None
 
 
 def get_tables_for_range(start: datetime, end: datetime) -> list[str]:
@@ -110,8 +156,9 @@ def fetch_recent_issues(cutoff: datetime) -> list[dict]:
     print(f"Fetching issues since {cutoff.isoformat()}...")
 
     try:
-        query_job = bq_client.query(query)
-        results = query_job.result()
+        results = run_query_with_fallback(query)
+        if results is None:
+            return []
     except Exception as e:
         print(f"BigQuery error: {e}")
         return []
@@ -182,8 +229,9 @@ def fetch_closed_issues(cutoff: datetime) -> list[str]:
     print(f"Fetching closed issues since {cutoff.isoformat()}...")
 
     try:
-        query_job = bq_client.query(query)
-        results = query_job.result()
+        results = run_query_with_fallback(query)
+        if results is None:
+            return []
         urls = [row.url for row in results if row.url]
         print(f"  Found {len(urls)} closed issues")
         return urls
@@ -222,8 +270,9 @@ def fetch_unlabeled_issues(cutoff: datetime) -> list[str]:
     print(f"Fetching unlabeled issues since {cutoff.isoformat()}...")
 
     try:
-        query_job = bq_client.query(query)
-        results = query_job.result()
+        results = run_query_with_fallback(query)
+        if results is None:
+            return []
         urls = [row.url for row in results if row.url]
         print(f"  Found {len(urls)} unlabeled issues")
         return urls
