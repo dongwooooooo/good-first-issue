@@ -117,13 +117,13 @@ def transform_issue(issue: dict) -> dict:
 
     return {
         "github_id": issue["id"],
-        "number": issue["number"],
+        "issue_number": issue["number"],
         "title": issue["title"][:500] if issue.get("title") else "",
         "url": issue["html_url"],
         "repo_full_name": repo_full_name,
         "repo_owner": parts[0] if len(parts) > 0 else "",
         "repo_name": parts[1] if len(parts) > 1 else "",
-        "labels": ",".join([l["name"] for l in issue.get("labels", [])]),
+        "labels": [l["name"] for l in issue.get("labels", [])],
         "created_at": issue["created_at"],
         "updated_at": issue["updated_at"],
         "is_open": issue["state"] == "open",
@@ -145,7 +145,7 @@ def upsert_issues(issues: list):
         try:
             supabase.from_("issues").upsert(
                 transformed,
-                on_conflict="github_id"
+                on_conflict="url"
             ).execute()
             print(f"Upserted batch {i // batch_size + 1}/{(len(issues) - 1) // batch_size + 1}")
         except Exception as e:

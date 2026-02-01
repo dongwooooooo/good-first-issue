@@ -179,7 +179,7 @@ def fetch_recent_issues(cutoff: datetime) -> list[dict]:
 
         issues.append({
             "github_id": int(row.github_id) if row.github_id else None,
-            "number": int(row.issue_number) if row.issue_number else 0,
+            "issue_number": int(row.issue_number) if row.issue_number else 0,
             "repo_full_name": row.repo_name,
             "repo_owner": owner,
             "repo_name": repo,
@@ -294,7 +294,7 @@ def upsert_issues(issues: list[dict]) -> int:
         try:
             result = supabase.table("issues").upsert(
                 batch,
-                on_conflict="github_id"
+                on_conflict="url"
             ).execute()
             total += len(result.data) if result.data else 0
         except Exception as e:
