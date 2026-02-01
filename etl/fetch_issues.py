@@ -185,7 +185,7 @@ def fetch_recent_issues(cutoff: datetime) -> list[dict]:
             "repo_name": repo,
             "title": row.title[:500] if row.title else "",
             "url": row.url,
-            "labels": ",".join(labels),
+            "labels": labels,  # PostgreSQL TEXT[] array
             "created_at": row.created_at,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "comment_count": int(row.comment_count) if row.comment_count else 0,
