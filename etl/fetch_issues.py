@@ -113,172 +113,127 @@ def get_tables_for_range(start: datetime, end: datetime) -> list[str]:
     return tables
 
 
-def fetch_recent_issues(cutoff: datetime) -> list[dict]:
+def fetch_all_issue_events(cutoff: datetime) -> tuple[list[dict], list[str], list[str]]:
     """
-    cutoff 시점 이후 생성/라벨링된 good first issue 가져오기
+    단일 쿼리로 모든 이슈 이벤트 가져오기 (쿼터 최적화)
+    - 새로 생성/라벨링된 good first issues
+    - 닫힌 이슈 URL
+    - 라벨 제거된 이슈 URL
+
+    Returns: (new_issues, closed_urls, unlabeled_urls)
     """
     now = datetime.now(timezone.utc)
-
-    # cutoff부터 현재까지의 테이블 목록
     tables = get_tables_for_range(cutoff, now)
     print(f"  Querying {len(tables)} tables: {tables[0]} ~ {tables[-1]}")
 
+    # 최적화: SELECT * 대신 필요한 컬럼만, 각 테이블에서 IssuesEvent만 먼저 필터링
     table_union = " UNION ALL ".join([
-        f"SELECT * FROM `{t}`" for t in tables
+        f"""SELECT repo.name as repo_name, payload, created_at
+            FROM `{t}`
+            WHERE type = 'IssuesEvent'
+              AND created_at >= TIMESTAMP('{cutoff.isoformat()}')"""
+        for t in tables
     ])
 
     query = f"""
     WITH events AS ({table_union})
     SELECT
-        repo.name as repo_name,
+        repo_name,
+        JSON_EXTRACT_SCALAR(payload, '$.action') as action,
         JSON_EXTRACT_SCALAR(payload, '$.issue.id') as github_id,
         JSON_EXTRACT_SCALAR(payload, '$.issue.number') as issue_number,
         JSON_EXTRACT_SCALAR(payload, '$.issue.title') as title,
         JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url,
         JSON_EXTRACT_SCALAR(payload, '$.issue.user.login') as author,
         JSON_EXTRACT(payload, '$.issue.labels') as labels_json,
-        JSON_EXTRACT_SCALAR(payload, '$.issue.created_at') as created_at,
+        JSON_EXTRACT_SCALAR(payload, '$.issue.state') as state,
+        JSON_EXTRACT_SCALAR(payload, '$.issue.created_at') as issue_created_at,
         JSON_EXTRACT_SCALAR(payload, '$.issue.comments') as comment_count,
-        created_at as event_at
+        JSON_EXTRACT_SCALAR(payload, '$.label.name') as removed_label
     FROM events
-    WHERE type = 'IssuesEvent'
-      AND created_at >= TIMESTAMP('{cutoff.isoformat()}')
-      AND JSON_EXTRACT_SCALAR(payload, '$.action') IN ('opened', 'labeled', 'reopened')
-      AND JSON_EXTRACT_SCALAR(payload, '$.issue.state') = 'open'
-      AND (
-        LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%good first issue%'
-        OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%good-first-issue%'
-        OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%beginner%'
-        OR LOWER(JSON_EXTRACT(payload, '$.issue.labels')) LIKE '%first-timers-only%'
-      )
+    WHERE JSON_EXTRACT_SCALAR(payload, '$.action') IN ('opened', 'labeled', 'reopened', 'closed', 'unlabeled')
     """
 
-    print(f"Fetching issues since {cutoff.isoformat()}...")
+    print(f"Fetching all issue events since {cutoff.isoformat()}...")
 
     try:
         results = run_query_with_fallback(query)
         if results is None:
-            return []
+            return [], [], []
     except Exception as e:
         print(f"BigQuery error: {e}")
-        return []
+        return [], [], []
 
-    issues = []
+    new_issues = []
+    closed_urls = set()
+    unlabeled_urls = set()
+
+    good_first_labels = ['good first issue', 'good-first-issue', 'beginner', 'first-timers-only']
+
     for row in results:
-        labels = []
-        if row.labels_json:
-            try:
-                labels_data = json.loads(row.labels_json)
-                labels = [l.get("name", "") for l in labels_data if isinstance(l, dict)]
-            except json.JSONDecodeError:
-                pass
+        action = row.action
+        url = row.url
 
-        repo_parts = row.repo_name.split("/")
-        owner = repo_parts[0] if len(repo_parts) > 0 else ""
-        repo = repo_parts[1] if len(repo_parts) > 1 else row.repo_name
+        if not url:
+            continue
 
-        issues.append({
-            "github_id": int(row.github_id) if row.github_id else None,
-            "issue_number": int(row.issue_number) if row.issue_number else 0,
-            "repo_full_name": row.repo_name,
-            "repo_owner": owner,
-            "repo_name": repo,
-            "title": row.title[:500] if row.title else "",
-            "url": row.url,
-            "labels": labels,  # PostgreSQL TEXT[] array
-            "created_at": row.created_at,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "comment_count": int(row.comment_count) if row.comment_count else 0,
-            "is_open": True
-        })
+        # 닫힌 이슈
+        if action == 'closed':
+            closed_urls.add(url)
+            continue
+
+        # 라벨 제거된 이슈 (good first issue 관련 라벨만)
+        if action == 'unlabeled':
+            removed_label = (row.removed_label or "").lower()
+            if any(lbl in removed_label for lbl in good_first_labels):
+                unlabeled_urls.add(url)
+            continue
+
+        # 새 이슈 / 라벨 추가 / 재오픈 (opened, labeled, reopened)
+        if action in ('opened', 'labeled', 'reopened') and row.state == 'open':
+            # good first issue 라벨이 있는지 확인
+            labels_str = (row.labels_json or "").lower()
+            has_good_first_label = any(lbl in labels_str for lbl in good_first_labels)
+
+            if has_good_first_label:
+                labels = []
+                if row.labels_json:
+                    try:
+                        labels_data = json.loads(row.labels_json)
+                        labels = [l.get("name", "") for l in labels_data if isinstance(l, dict)]
+                    except json.JSONDecodeError:
+                        pass
+
+                repo_parts = row.repo_name.split("/")
+                owner = repo_parts[0] if len(repo_parts) > 0 else ""
+                repo = repo_parts[1] if len(repo_parts) > 1 else row.repo_name
+
+                new_issues.append({
+                    "github_id": int(row.github_id) if row.github_id else None,
+                    "issue_number": int(row.issue_number) if row.issue_number else 0,
+                    "repo_full_name": row.repo_name,
+                    "repo_owner": owner,
+                    "repo_name": repo,
+                    "title": row.title[:500] if row.title else "",
+                    "url": url,
+                    "labels": labels,
+                    "created_at": row.issue_created_at,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "comment_count": int(row.comment_count) if row.comment_count else 0,
+                    "is_open": True
+                })
 
     # 중복 제거
     seen = set()
     unique_issues = []
-    for issue in issues:
-        key = issue["url"] or issue["github_id"]
-        if key and key not in seen:
+    for issue in new_issues:
+        key = issue["url"]
+        if key not in seen:
             seen.add(key)
             unique_issues.append(issue)
 
-    print(f"  Found {len(unique_issues)} unique issues")
-    return unique_issues
-
-
-def fetch_closed_issues(cutoff: datetime) -> list[str]:
-    """
-    cutoff 시점 이후 닫힌 이슈 URL 가져오기
-    """
-    now = datetime.now(timezone.utc)
-    tables = get_tables_for_range(cutoff, now)
-
-    table_union = " UNION ALL ".join([
-        f"SELECT * FROM `{t}`" for t in tables
-    ])
-
-    query = f"""
-    WITH events AS ({table_union})
-    SELECT DISTINCT
-        JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url
-    FROM events
-    WHERE type = 'IssuesEvent'
-      AND created_at >= TIMESTAMP('{cutoff.isoformat()}')
-      AND JSON_EXTRACT_SCALAR(payload, '$.action') = 'closed'
-    """
-
-    print(f"Fetching closed issues since {cutoff.isoformat()}...")
-
-    try:
-        results = run_query_with_fallback(query)
-        if results is None:
-            return []
-        urls = [row.url for row in results if row.url]
-        print(f"  Found {len(urls)} closed issues")
-        return urls
-    except Exception as e:
-        print(f"BigQuery error: {e}")
-        return []
-
-
-def fetch_unlabeled_issues(cutoff: datetime) -> list[str]:
-    """
-    cutoff 시점 이후 good first issue 라벨이 제거된 이슈 URL 가져오기
-    """
-    now = datetime.now(timezone.utc)
-    tables = get_tables_for_range(cutoff, now)
-
-    table_union = " UNION ALL ".join([
-        f"SELECT * FROM `{t}`" for t in tables
-    ])
-
-    query = f"""
-    WITH events AS ({table_union})
-    SELECT DISTINCT
-        JSON_EXTRACT_SCALAR(payload, '$.issue.html_url') as url
-    FROM events
-    WHERE type = 'IssuesEvent'
-      AND created_at >= TIMESTAMP('{cutoff.isoformat()}')
-      AND JSON_EXTRACT_SCALAR(payload, '$.action') = 'unlabeled'
-      AND (
-        LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%good first issue%'
-        OR LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%good-first-issue%'
-        OR LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%beginner%'
-        OR LOWER(JSON_EXTRACT_SCALAR(payload, '$.label.name')) LIKE '%first-timers-only%'
-      )
-    """
-
-    print(f"Fetching unlabeled issues since {cutoff.isoformat()}...")
-
-    try:
-        results = run_query_with_fallback(query)
-        if results is None:
-            return []
-        urls = [row.url for row in results if row.url]
-        print(f"  Found {len(urls)} unlabeled issues")
-        return urls
-    except Exception as e:
-        print(f"BigQuery error: {e}")
-        return []
+    print(f"  Found {len(unique_issues)} new/updated issues, {len(closed_urls)} closed, {len(unlabeled_urls)} unlabeled")
+    return unique_issues, list(closed_urls), list(unlabeled_urls)
 
 
 def upsert_issues(issues: list[dict]) -> int:
@@ -359,18 +314,18 @@ def main():
     days_to_sync = (now - cutoff).days
     print(f"Syncing from: {cutoff.isoformat()} ({days_to_sync} days)")
 
-    # 1. 새 이슈 / 재오픈된 이슈 가져오기
-    issues = fetch_recent_issues(cutoff)
+    # 단일 쿼리로 모든 이벤트 가져오기 (쿼터 최적화: 3쿼리 → 1쿼리)
+    issues, closed_urls, unlabeled_urls = fetch_all_issue_events(cutoff)
+
+    # 1. 새 이슈 / 재오픈된 이슈 저장
     saved = upsert_issues(issues)
     print(f"✓ Upserted {saved} issues")
 
     # 2. 닫힌 이슈 삭제
-    closed_urls = fetch_closed_issues(cutoff)
     deleted_closed = delete_issues(closed_urls)
     print(f"✓ Deleted {deleted_closed} closed issues")
 
     # 3. 라벨 제거된 이슈 삭제
-    unlabeled_urls = fetch_unlabeled_issues(cutoff)
     deleted_unlabeled = delete_issues(unlabeled_urls)
     print(f"✓ Deleted {deleted_unlabeled} unlabeled issues")
 
