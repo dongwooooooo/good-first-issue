@@ -6,8 +6,11 @@ GoodFirst ETL: BigQuery (GitHub Archive) -> Supabase
 
 import os
 import json
+import base64
+import tempfile
 from datetime import datetime, timedelta, timezone
 from google.cloud import bigquery
+from google.oauth2 import service_account
 from google.api_core.exceptions import Forbidden
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -20,27 +23,36 @@ supabase: Client = create_client(
     os.environ["SUPABASE_KEY"]
 )
 
-# GCP 프로젝트 목록 (폴백 지원)
-GCP_PROJECTS = [
-    os.environ.get("GCP_PROJECT_PRIMARY", "silver-pen-391310"),
-    os.environ.get("GCP_PROJECT_FALLBACK", "dogwood-dryad-485405-k8"),
-]
+# GCP 프로젝트 설정
+GCP_PROJECT_PRIMARY = os.environ.get("GCP_PROJECT_PRIMARY", "silver-pen-391310")
+GCP_PROJECT_FALLBACK = os.environ.get("GCP_PROJECT_FALLBACK", "dogwood-dryad-485405-k8")
+
+# Fallback credentials (base64 인코딩된 서비스 계정 JSON)
+GCP_FALLBACK_CREDENTIALS_B64 = os.environ.get("GCP_FALLBACK_CREDENTIALS")
 
 # 현재 사용 중인 BigQuery 클라이언트
 bq_client = None
-current_project_idx = 0
+using_fallback = False
 
 
-def get_bq_client(force_next: bool = False) -> bigquery.Client:
+def get_bq_client(force_fallback: bool = False) -> bigquery.Client:
     """BigQuery 클라이언트 반환 (폴백 지원)"""
-    global bq_client, current_project_idx
+    global bq_client, using_fallback
 
-    if force_next:
-        current_project_idx = (current_project_idx + 1) % len(GCP_PROJECTS)
+    if force_fallback and GCP_FALLBACK_CREDENTIALS_B64:
+        using_fallback = True
+        print(f"Using GCP fallback project: {GCP_PROJECT_FALLBACK}")
 
-    project = GCP_PROJECTS[current_project_idx]
-    print(f"Using GCP project: {project}")
-    bq_client = bigquery.Client(project=project)
+        # Base64 디코딩하여 credentials 생성
+        creds_json = base64.b64decode(GCP_FALLBACK_CREDENTIALS_B64).decode('utf-8')
+        creds_dict = json.loads(creds_json)
+        credentials = service_account.Credentials.from_service_account_info(creds_dict)
+        bq_client = bigquery.Client(project=GCP_PROJECT_FALLBACK, credentials=credentials)
+    else:
+        using_fallback = False
+        print(f"Using GCP primary project: {GCP_PROJECT_PRIMARY}")
+        bq_client = bigquery.Client(project=GCP_PROJECT_PRIMARY)
+
     return bq_client
 
 
@@ -82,22 +94,25 @@ def get_last_sync_time() -> datetime:
 
 def run_query_with_fallback(query: str):
     """쿼리 실행 (쿼터 초과 시 폴백 프로젝트로 재시도)"""
-    global bq_client
+    global bq_client, using_fallback
 
-    for attempt in range(len(GCP_PROJECTS)):
-        try:
-            query_job = bq_client.query(query)
-            return query_job.result()
-        except Forbidden as e:
-            if "quota" in str(e).lower() and attempt < len(GCP_PROJECTS) - 1:
-                print(f"Quota exceeded, switching to fallback project...")
-                bq_client = get_bq_client(force_next=True)
-            else:
-                raise e
-        except Exception as e:
+    # 첫 번째 시도 (primary)
+    try:
+        query_job = bq_client.query(query)
+        return query_job.result()
+    except Forbidden as e:
+        if "quota" in str(e).lower() and not using_fallback and GCP_FALLBACK_CREDENTIALS_B64:
+            print(f"Quota exceeded, switching to fallback project...")
+            bq_client = get_bq_client(force_fallback=True)
+        else:
             raise e
 
-    return None
+    # 두 번째 시도 (fallback)
+    try:
+        query_job = bq_client.query(query)
+        return query_job.result()
+    except Exception as e:
+        raise e
 
 
 def get_tables_for_range(start: datetime, end: datetime) -> list[str]:

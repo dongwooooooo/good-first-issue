@@ -38,6 +38,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GCP_FALLBACK_CREDENTIALS: ${{ secrets.GCP_FALLBACK_CREDENTIALS }}
         run: |
           cd etl
           python fetch_issues.py
