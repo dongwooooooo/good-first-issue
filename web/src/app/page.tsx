@@ -5,6 +5,7 @@ import SearchBox from '@/components/SearchBox'
 import Pagination from '@/components/Pagination'
 import ViewToggle from '@/components/ViewToggle'
 import LanguageFilter from '@/components/LanguageFilter'
+import TrendingDropdown from '@/components/TrendingDropdown'
 
 const PAGE_SIZE = 24
 
@@ -304,7 +305,7 @@ export default async function Home({
                   <>Latest issues</>
                 )}
               </p>
-              <SortLinks view="issues" current={params.sort} period={params.period} searchParams={params} />
+              <SortLinks view="issues" current={params.sort} searchParams={params} />
             </div>
 
             {issues.length > 0 ? (
@@ -400,17 +401,15 @@ function FilterBadge({ label, paramToRemove, params }: { label: string; paramToR
   )
 }
 
-function SortLinks({ view, current, period, searchParams }: {
+function SortLinks({ view, current, searchParams }: {
   view: string
   current?: string
-  period?: string
   searchParams?: Record<string, string | undefined>
 }) {
   const options = view === 'issues'
     ? [
         { value: 'newest', label: 'Newest' },
         { value: 'stars', label: 'Stars' },
-        { value: 'trending', label: 'Trending' },
       ]
     : view === 'repos'
     ? [
@@ -424,23 +423,13 @@ function SortLinks({ view, current, period, searchParams }: {
         { value: 'stars', label: 'Stars' },
       ]
 
-  const periodOptions = [
-    { value: '7', label: '1주' },
-    { value: '30', label: '1개월' },
-    { value: '90', label: '3개월' },
-  ]
-
   const defaultSort = view === 'issues' ? 'newest' : 'issues'
   const currentSort = current || defaultSort
-  const currentPeriod = period || '30'
 
-  function buildHref(sort: string, newPeriod?: string) {
+  function buildHref(sort: string) {
     const params = new URLSearchParams()
     params.set('view', view)
     params.set('sort', sort)
-    if (sort === 'trending') {
-      params.set('period', newPeriod || currentPeriod)
-    }
     if (searchParams?.language) params.set('language', searchParams.language)
     if (searchParams?.q) params.set('q', searchParams.q)
     if (searchParams?.org) params.set('org', searchParams.org)
@@ -462,23 +451,8 @@ function SortLinks({ view, current, period, searchParams }: {
           {opt.label}
         </Link>
       ))}
-      {currentSort === 'trending' && (
-        <>
-          <span className="mx-1 text-zinc-300 dark:text-zinc-600">|</span>
-          {periodOptions.map((opt) => (
-            <Link
-              key={opt.value}
-              href={buildHref('trending', opt.value)}
-              className={`rounded-lg px-2 py-1 ${
-                currentPeriod === opt.value
-                  ? 'bg-emerald-100 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
-                  : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {opt.label}
-            </Link>
-          ))}
-        </>
+      {view === 'issues' && (
+        <TrendingDropdown isActive={currentSort === 'trending'} />
       )}
     </div>
   )
