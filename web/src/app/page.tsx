@@ -30,6 +30,7 @@ async function getIssues(params: {
   q?: string
   page?: string
   sort?: string
+  period?: string
 }) {
   if (!supabase) return { issues: [], total: 0 }
 
@@ -56,11 +57,12 @@ async function getIssues(params: {
   if (sort === 'stars') {
     query = query.order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'trending') {
-    // Trending: stars order within last 30 days
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    // Trending: stars order within selected period
+    const periodDays = parseInt(params.period || '30')
+    const periodAgo = new Date()
+    periodAgo.setDate(periodAgo.getDate() - periodDays)
     query = query
-      .gte('created_at', thirtyDaysAgo.toISOString())
+      .gte('created_at', periodAgo.toISOString())
       .order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'oldest') {
     query = query.order('created_at', { ascending: true })
@@ -205,6 +207,7 @@ export default async function Home({
     q?: string
     page?: string
     sort?: string
+    period?: string
   }>
 }) {
   const params = await searchParams
@@ -301,7 +304,7 @@ export default async function Home({
                   <>Latest issues</>
                 )}
               </p>
-              <SortLinks view="issues" current={params.sort} />
+              <SortLinks view="issues" current={params.sort} period={params.period} searchParams={params} />
             </div>
 
             {issues.length > 0 ? (
@@ -397,7 +400,12 @@ function FilterBadge({ label, paramToRemove, params }: { label: string; paramToR
   )
 }
 
-function SortLinks({ view, current }: { view: string; current?: string }) {
+function SortLinks({ view, current, period, searchParams }: {
+  view: string
+  current?: string
+  period?: string
+  searchParams?: Record<string, string | undefined>
+}) {
   const options = view === 'issues'
     ? [
         { value: 'newest', label: 'Newest' },
@@ -416,15 +424,35 @@ function SortLinks({ view, current }: { view: string; current?: string }) {
         { value: 'stars', label: 'Stars' },
       ]
 
+  const periodOptions = [
+    { value: '7', label: '1주' },
+    { value: '30', label: '1개월' },
+    { value: '90', label: '3개월' },
+  ]
+
   const defaultSort = view === 'issues' ? 'newest' : 'issues'
   const currentSort = current || defaultSort
+  const currentPeriod = period || '30'
+
+  function buildHref(sort: string, newPeriod?: string) {
+    const params = new URLSearchParams()
+    params.set('view', view)
+    params.set('sort', sort)
+    if (sort === 'trending') {
+      params.set('period', newPeriod || currentPeriod)
+    }
+    if (searchParams?.language) params.set('language', searchParams.language)
+    if (searchParams?.q) params.set('q', searchParams.q)
+    if (searchParams?.org) params.set('org', searchParams.org)
+    return `/?${params.toString()}`
+  }
 
   return (
-    <div className="flex gap-1 text-sm">
+    <div className="flex items-center gap-1 text-sm">
       {options.map((opt) => (
         <Link
           key={opt.value}
-          href={`/?view=${view}&sort=${opt.value}`}
+          href={buildHref(opt.value)}
           className={`rounded-lg px-3 py-1 ${
             currentSort === opt.value
               ? 'bg-zinc-200 font-medium text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100'
@@ -434,6 +462,24 @@ function SortLinks({ view, current }: { view: string; current?: string }) {
           {opt.label}
         </Link>
       ))}
+      {currentSort === 'trending' && (
+        <>
+          <span className="mx-1 text-zinc-300 dark:text-zinc-600">|</span>
+          {periodOptions.map((opt) => (
+            <Link
+              key={opt.value}
+              href={buildHref('trending', opt.value)}
+              className={`rounded-lg px-2 py-1 ${
+                currentPeriod === opt.value
+                  ? 'bg-emerald-100 font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+                  : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {opt.label}
+            </Link>
+          ))}
+        </>
+      )}
     </div>
   )
 }
