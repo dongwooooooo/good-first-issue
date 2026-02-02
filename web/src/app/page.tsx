@@ -31,7 +31,8 @@ async function getIssues(params: {
   q?: string
   page?: string
   sort?: string
-  period?: string
+  from?: string
+  to?: string
 }) {
   if (!supabase) return { issues: [], total: 0 }
 
@@ -58,12 +59,19 @@ async function getIssues(params: {
   if (sort === 'stars') {
     query = query.order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'trending') {
-    // Trending: stars order within selected period
-    const periodDays = parseInt(params.period || '30')
-    const periodAgo = new Date()
-    periodAgo.setDate(periodAgo.getDate() - periodDays)
+    // Trending: stars order within selected date range
+    const fromDays = parseInt(params.from || '30')
+    const toDays = parseInt(params.to || '0')
+
+    const fromDate = new Date()
+    fromDate.setDate(fromDate.getDate() - fromDays)
+
+    const toDate = new Date()
+    toDate.setDate(toDate.getDate() - toDays)
+
     query = query
-      .gte('created_at', periodAgo.toISOString())
+      .gte('created_at', fromDate.toISOString())
+      .lte('created_at', toDate.toISOString())
       .order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'oldest') {
     query = query.order('created_at', { ascending: true })
@@ -208,7 +216,8 @@ export default async function Home({
     q?: string
     page?: string
     sort?: string
-    period?: string
+    from?: string
+    to?: string
   }>
 }) {
   const params = await searchParams
