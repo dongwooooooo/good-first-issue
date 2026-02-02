@@ -55,6 +55,13 @@ async function getIssues(params: {
 
   if (sort === 'stars') {
     query = query.order('stars', { ascending: false, nullsFirst: false })
+  } else if (sort === 'trending') {
+    // Trending: stars order within last 30 days
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    query = query
+      .gte('created_at', thirtyDaysAgo.toISOString())
+      .order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'oldest') {
     query = query.order('created_at', { ascending: true })
   } else {
@@ -395,6 +402,7 @@ function SortLinks({ view, current }: { view: string; current?: string }) {
     ? [
         { value: 'newest', label: 'Newest' },
         { value: 'stars', label: 'Stars' },
+        { value: 'trending', label: 'Trending' },
       ]
     : view === 'repos'
     ? [
