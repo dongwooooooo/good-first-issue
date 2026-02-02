@@ -23,33 +23,54 @@ supabase: Client = create_client(
     os.environ["SUPABASE_KEY"]
 )
 
-# GCP 프로젝트 설정
+# GCP 프로젝트 설정 (다중 fallback 지원)
 GCP_PROJECT_PRIMARY = os.environ.get("GCP_PROJECT_PRIMARY", "silver-pen-391310")
-GCP_PROJECT_FALLBACK = os.environ.get("GCP_PROJECT_FALLBACK", "dogwood-dryad-485405-k8")
 
-# Fallback credentials (base64 인코딩된 서비스 계정 JSON)
-GCP_FALLBACK_CREDENTIALS_B64 = os.environ.get("GCP_FALLBACK_CREDENTIALS")
+# Fallback 프로젝트들 (순서대로 시도)
+FALLBACK_CONFIGS = []
+
+# Fallback 1
+if os.environ.get("GCP_FALLBACK_CREDENTIALS"):
+    FALLBACK_CONFIGS.append({
+        "project": os.environ.get("GCP_PROJECT_FALLBACK", "dogwood-dryad-485405-k8"),
+        "credentials_b64": os.environ.get("GCP_FALLBACK_CREDENTIALS")
+    })
+
+# Fallback 2
+if os.environ.get("GCP_FALLBACK_CREDENTIALS_2"):
+    FALLBACK_CONFIGS.append({
+        "project": os.environ.get("GCP_PROJECT_FALLBACK_2", ""),
+        "credentials_b64": os.environ.get("GCP_FALLBACK_CREDENTIALS_2")
+    })
+
+# Fallback 3
+if os.environ.get("GCP_FALLBACK_CREDENTIALS_3"):
+    FALLBACK_CONFIGS.append({
+        "project": os.environ.get("GCP_PROJECT_FALLBACK_3", ""),
+        "credentials_b64": os.environ.get("GCP_FALLBACK_CREDENTIALS_3")
+    })
 
 # 현재 사용 중인 BigQuery 클라이언트
 bq_client = None
-using_fallback = False
+current_fallback_index = -1  # -1 = primary, 0+ = fallback index
 
 
-def get_bq_client(force_fallback: bool = False) -> bigquery.Client:
-    """BigQuery 클라이언트 반환 (폴백 지원)"""
-    global bq_client, using_fallback
+def get_bq_client(fallback_index: int = -1) -> bigquery.Client:
+    """BigQuery 클라이언트 반환 (다중 폴백 지원)"""
+    global bq_client, current_fallback_index
 
-    if force_fallback and GCP_FALLBACK_CREDENTIALS_B64:
-        using_fallback = True
-        print(f"Using GCP fallback project: {GCP_PROJECT_FALLBACK}")
+    current_fallback_index = fallback_index
+
+    if fallback_index >= 0 and fallback_index < len(FALLBACK_CONFIGS):
+        config = FALLBACK_CONFIGS[fallback_index]
+        print(f"Using GCP fallback project #{fallback_index + 1}: {config['project']}")
 
         # Base64 디코딩하여 credentials 생성
-        creds_json = base64.b64decode(GCP_FALLBACK_CREDENTIALS_B64).decode('utf-8')
+        creds_json = base64.b64decode(config["credentials_b64"]).decode('utf-8')
         creds_dict = json.loads(creds_json)
         credentials = service_account.Credentials.from_service_account_info(creds_dict)
-        bq_client = bigquery.Client(project=GCP_PROJECT_FALLBACK, credentials=credentials)
+        bq_client = bigquery.Client(project=config["project"], credentials=credentials)
     else:
-        using_fallback = False
         print(f"Using GCP primary project: {GCP_PROJECT_PRIMARY}")
         bq_client = bigquery.Client(project=GCP_PROJECT_PRIMARY)
 
@@ -93,21 +114,31 @@ def get_last_sync_time() -> datetime:
 
 
 def run_query_with_fallback(query: str):
-    """쿼리 실행 (쿼터 초과 시 폴백 프로젝트로 재시도)"""
-    global bq_client, using_fallback
+    """쿼리 실행 (쿼터 초과 시 다음 폴백 프로젝트로 재시도)"""
+    global bq_client, current_fallback_index
 
-    # 첫 번째 시도 (primary)
-    try:
-        query_job = bq_client.query(query)
-        return query_job.result()
-    except Forbidden as e:
-        if "quota" in str(e).lower() and not using_fallback and GCP_FALLBACK_CREDENTIALS_B64:
-            print(f"Quota exceeded, switching to fallback project...")
-            bq_client = get_bq_client(force_fallback=True)
-        else:
-            raise e
+    # Primary부터 시작하여 모든 fallback 순차 시도
+    start_index = current_fallback_index
+    max_index = len(FALLBACK_CONFIGS) - 1
 
-    # 두 번째 시도 (fallback)
+    for attempt_index in range(start_index, max_index + 1):
+        try:
+            query_job = bq_client.query(query)
+            return query_job.result()
+        except Forbidden as e:
+            if "quota" in str(e).lower():
+                next_index = current_fallback_index + 1
+                if next_index <= max_index:
+                    print(f"Quota exceeded, switching to fallback project #{next_index + 1}...")
+                    bq_client = get_bq_client(fallback_index=next_index)
+                    continue
+                else:
+                    print(f"All {len(FALLBACK_CONFIGS) + 1} projects quota exceeded!")
+                    raise e
+            else:
+                raise e
+
+    # 마지막 fallback으로 최종 시도
     try:
         query_job = bq_client.query(query)
         return query_job.result()

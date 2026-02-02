@@ -39,6 +39,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           GCP_FALLBACK_CREDENTIALS: ${{ secrets.GCP_FALLBACK_CREDENTIALS }}
+          GCP_PROJECT_FALLBACK_2: ${{ secrets.GCP_PROJECT_FALLBACK_2 }}
+          GCP_FALLBACK_CREDENTIALS_2: ${{ secrets.GCP_FALLBACK_CREDENTIALS_2 }}
         run: |
           cd etl
           python fetch_issues.py
