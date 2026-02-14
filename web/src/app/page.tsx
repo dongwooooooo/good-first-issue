@@ -227,6 +227,7 @@ export default async function Home({
 }) {
   const params = await searchParams
   const view = params.view || 'issues'
+  const isUnifiedSearch = Boolean(params.q?.trim())
 
   const [languages, { totalIssues }] = await Promise.all([
     getLanguages(),
@@ -234,28 +235,53 @@ export default async function Home({
   ])
 
   let issues: Issue[] = []
-  let total = 0
+  let issueTotal = 0
   let repoGroups: RepoGroup[] = []
+  let repoTotal = 0
   let orgGroups: OrgGroup[] = []
+  let orgTotal = 0
 
-  if (view === 'repos') {
+  if (isUnifiedSearch) {
+    const [issueResult, repoResult, orgResult] = await Promise.all([
+      getIssues({ ...params, page: '1' }),
+      getRepoGroups({ ...params, page: '1' }),
+      getOrgGroups({ ...params, page: '1' }),
+    ])
+    issues = issueResult.issues
+    issueTotal = issueResult.total
+    repoGroups = repoResult.repos
+    repoTotal = repoResult.total
+    orgGroups = orgResult.orgs
+    orgTotal = orgResult.total
+  } else if (view === 'repos') {
     const result = await getRepoGroups(params)
     repoGroups = result.repos
-    total = result.total
+    repoTotal = result.total
   } else if (view === 'orgs') {
     const result = await getOrgGroups(params)
     orgGroups = result.orgs
-    total = result.total
+    orgTotal = result.total
   } else {
     const result = await getIssues(params)
     issues = result.issues
-    total = result.total
+    issueTotal = result.total
   }
+
+  const total = view === 'repos' ? repoTotal : view === 'orgs' ? orgTotal : issueTotal
 
   const currentPage = parseInt(params.page || '1')
   const pageSize = view === 'issues' ? PAGE_SIZE : 30
   const totalPages = Math.ceil(total / pageSize)
   const hasFilters = params.q || params.language || params.org
+
+  function buildViewHref(nextView: 'issues' | 'repos' | 'orgs') {
+    const sp = new URLSearchParams()
+    sp.set('view', nextView)
+    if (params.q) sp.set('q', params.q)
+    if (params.language) sp.set('language', params.language)
+    if (params.org) sp.set('org', params.org)
+    return `/?${sp.toString()}`
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -308,90 +334,154 @@ export default async function Home({
 
       {/* Main Content */}
       <main className="mx-auto max-w-6xl px-4 py-6">
-        {/* Issues View */}
-        {view === 'issues' && (
+        {isUnifiedSearch ? (
           <>
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                {hasFilters ? (
-                  <><strong>{total.toLocaleString()}</strong> results</>
+            <div className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+              <strong>{(issueTotal + repoTotal + orgTotal).toLocaleString()}</strong> combined results
+            </div>
+
+            <section className="mb-10">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Issues</h2>
+                <Link className="text-sm text-emerald-600 hover:underline" href={buildViewHref('issues')}>
+                  View all {issueTotal.toLocaleString()}
+                </Link>
+              </div>
+              {issues.length > 0 ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {issues.slice(0, 9).map((issue) => (
+                    <IssueCard key={issue.id} issue={issue} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState />
+              )}
+            </section>
+
+            <section className="mb-10">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Repositories</h2>
+                <Link className="text-sm text-emerald-600 hover:underline" href={buildViewHref('repos')}>
+                  View all {repoTotal.toLocaleString()}
+                </Link>
+              </div>
+              {repoGroups.length > 0 ? (
+                <div className="space-y-3">
+                  {repoGroups.slice(0, 8).map((repo) => (
+                    <RepoCard key={repo.repo_full_name} repo={repo} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState />
+              )}
+            </section>
+
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Organizations</h2>
+                <Link className="text-sm text-emerald-600 hover:underline" href={buildViewHref('orgs')}>
+                  View all {orgTotal.toLocaleString()}
+                </Link>
+              </div>
+              {orgGroups.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {orgGroups.slice(0, 9).map((org) => (
+                    <OrgCard key={org.org_name} org={org} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState />
+              )}
+            </section>
+          </>
+        ) : (
+          <>
+            {/* Issues View */}
+            {view === 'issues' && (
+              <>
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    {hasFilters ? (
+                      <><strong>{total.toLocaleString()}</strong> results</>
+                    ) : (
+                      <>Latest issues</>
+                    )}
+                  </p>
+                  <SortLinks view="issues" current={params.sort} searchParams={params} />
+                </div>
+
+                {issues.length > 0 ? (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {issues.map((issue) => (
+                      <IssueCard key={issue.id} issue={issue} />
+                    ))}
+                  </div>
                 ) : (
-                  <>Latest issues</>
+                  <EmptyState />
                 )}
-              </p>
-              <SortLinks view="issues" current={params.sort} searchParams={params} />
-            </div>
 
-            {issues.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {issues.map((issue) => (
-                  <IssueCard key={issue.id} issue={issue} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState />
+                {totalPages > 1 && (
+                  <div className="mt-8">
+                    <Pagination currentPage={currentPage} totalPages={totalPages} total={total} />
+                  </div>
+                )}
+              </>
             )}
 
-            {totalPages > 1 && (
-              <div className="mt-8">
-                <Pagination currentPage={currentPage} totalPages={totalPages} total={total} />
-              </div>
-            )}
-          </>
-        )}
+            {/* Repos View */}
+            {view === 'repos' && (
+              <>
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    <strong>{total.toLocaleString()}</strong> repositories
+                  </p>
+                  <SortLinks view="repos" current={params.sort} />
+                </div>
 
-        {/* Repos View */}
-        {view === 'repos' && (
-          <>
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                <strong>{total.toLocaleString()}</strong> repositories
-              </p>
-              <SortLinks view="repos" current={params.sort} />
-            </div>
+                {repoGroups.length > 0 ? (
+                  <div className="space-y-3">
+                    {repoGroups.map((repo) => (
+                      <RepoCard key={repo.repo_full_name} repo={repo} />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState />
+                )}
 
-            {repoGroups.length > 0 ? (
-              <div className="space-y-3">
-                {repoGroups.map((repo) => (
-                  <RepoCard key={repo.repo_full_name} repo={repo} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState />
-            )}
-
-            {totalPages > 1 && (
-              <div className="mt-8">
-                <Pagination currentPage={currentPage} totalPages={totalPages} total={total} />
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Orgs View */}
-        {view === 'orgs' && (
-          <>
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                <strong>{total.toLocaleString()}</strong> organizations
-              </p>
-              <SortLinks view="orgs" current={params.sort} />
-            </div>
-
-            {orgGroups.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {orgGroups.map((org) => (
-                  <OrgCard key={org.org_name} org={org} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState />
+                {totalPages > 1 && (
+                  <div className="mt-8">
+                    <Pagination currentPage={currentPage} totalPages={totalPages} total={total} />
+                  </div>
+                )}
+              </>
             )}
 
-            {totalPages > 1 && (
-              <div className="mt-8">
-                <Pagination currentPage={currentPage} totalPages={totalPages} total={total} />
-              </div>
+            {/* Orgs View */}
+            {view === 'orgs' && (
+              <>
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    <strong>{total.toLocaleString()}</strong> organizations
+                  </p>
+                  <SortLinks view="orgs" current={params.sort} />
+                </div>
+
+                {orgGroups.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {orgGroups.map((org) => (
+                      <OrgCard key={org.org_name} org={org} />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState />
+                )}
+
+                {totalPages > 1 && (
+                  <div className="mt-8">
+                    <Pagination currentPage={currentPage} totalPages={totalPages} total={total} />
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
