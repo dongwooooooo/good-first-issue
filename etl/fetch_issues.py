@@ -8,6 +8,7 @@ import os
 import json
 import base64
 import tempfile
+import re
 from datetime import datetime, timedelta, timezone
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -84,6 +85,52 @@ bq_client = get_bq_client()
 RETENTION_DAYS = 365  # 데이터 보관 기간
 INITIAL_LOAD_DAYS = 30  # 초기 로드 시 가져올 기간 (BigQuery 쿼터 제한)
 MIN_SYNC_HOURS = 3  # 최소 동기화 범위 (여유분)
+
+def normalize_label(label: str) -> str:
+    """라벨명을 비교 가능한 canonical key로 정규화."""
+    normalized = (label or "").strip().lower()
+    normalized = normalized.replace("_", " ").replace("-", " ").replace("/", " ").replace(":", " ")
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def is_good_first_label(label: str) -> bool:
+    """라벨명이 good-first 계열인지 판정."""
+    normalized = normalize_label(label)
+    if not normalized:
+        return False
+
+    if "good first issue" in normalized or "goodfirstissue" in normalized:
+        return True
+    if "first timers only" in normalized:
+        return True
+    if "up for grabs" in normalized:
+        return True
+    if "low hanging fruit" in normalized:
+        return True
+
+    tokens = normalized.split()
+    token_set = set(tokens)
+
+    # beginner/newcomer/starter 계열
+    if "beginner" in token_set:
+        return True
+    if "beginners" in token_set and "only" in token_set:
+        return True
+    if "newcomer" in token_set or "newcomers" in token_set:
+        return True
+    if "starter" in token_set or "starters" in token_set:
+        return True
+
+    # first-issue / first-contributor / first-time-contributor
+    if "first" in token_set and ("issue" in token_set or "contributor" in token_set or "contributors" in token_set):
+        return True
+
+    # easy 계열 (입문 난이도 표현)
+    if "easy" in token_set:
+        return True
+
+    return False
 
 
 def get_table_name(dt: datetime) -> str:
@@ -214,8 +261,6 @@ def fetch_all_issue_events(cutoff: datetime) -> tuple[list[dict], list[str], lis
     closed_urls = set()
     unlabeled_urls = set()
 
-    good_first_labels = ['good first issue', 'good-first-issue', 'beginner', 'first-timers-only']
-
     for row in results:
         action = row.action
         url = row.url
@@ -230,25 +275,24 @@ def fetch_all_issue_events(cutoff: datetime) -> tuple[list[dict], list[str], lis
 
         # 라벨 제거된 이슈 (good first issue 관련 라벨만)
         if action == 'unlabeled':
-            removed_label = (row.removed_label or "").lower()
-            if any(lbl in removed_label for lbl in good_first_labels):
+            removed_label = row.removed_label or ""
+            if is_good_first_label(removed_label):
                 unlabeled_urls.add(url)
             continue
 
         # 새 이슈 / 라벨 추가 / 재오픈 (opened, labeled, reopened)
         if action in ('opened', 'labeled', 'reopened') and row.state == 'open':
-            # good first issue 라벨이 있는지 확인
-            labels_str = (row.labels_json or "").lower()
-            has_good_first_label = any(lbl in labels_str for lbl in good_first_labels)
+            labels = []
+            if row.labels_json:
+                try:
+                    labels_data = json.loads(row.labels_json)
+                    labels = [l.get("name", "") for l in labels_data if isinstance(l, dict)]
+                except json.JSONDecodeError:
+                    labels = []
+
+            has_good_first_label = any(is_good_first_label(label) for label in labels)
 
             if has_good_first_label:
-                labels = []
-                if row.labels_json:
-                    try:
-                        labels_data = json.loads(row.labels_json)
-                        labels = [l.get("name", "") for l in labels_data if isinstance(l, dict)]
-                    except json.JSONDecodeError:
-                        pass
 
                 repo_parts = row.repo_name.split("/")
                 owner = repo_parts[0] if len(repo_parts) > 0 else ""

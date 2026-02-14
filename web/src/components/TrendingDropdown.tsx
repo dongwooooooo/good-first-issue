@@ -12,14 +12,11 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
   // from: 며칠 전부터, to: 며칠 전까지 (0 = 오늘)
   const currentFrom = parseInt(searchParams.get('from') || '30')
   const currentTo = parseInt(searchParams.get('to') || '0')
+  const currentMinStars = parseInt(searchParams.get('minStars') || '1000')
 
   const [fromDays, setFromDays] = useState(currentFrom)
   const [toDays, setToDays] = useState(currentTo)
-
-  useEffect(() => {
-    setFromDays(currentFrom)
-    setToDays(currentTo)
-  }, [currentFrom, currentTo])
+  const [minStars, setMinStars] = useState(currentMinStars)
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -36,6 +33,7 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
     params.set('sort', 'trending')
     params.set('from', String(fromDays))
     params.set('to', String(toDays))
+    params.set('minStars', String(minStars))
     params.delete('page')
     router.push(`/?${params.toString()}`)
     setIsOpen(false)
@@ -43,22 +41,29 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
 
   function handleClick() {
     if (isActive) {
+      if (!isOpen) {
+        setFromDays(currentFrom)
+        setToDays(currentTo)
+        setMinStars(currentMinStars)
+      }
       setIsOpen(!isOpen)
     } else {
       const params = new URLSearchParams(searchParams.toString())
       params.set('sort', 'trending')
       params.set('from', '30')
       params.set('to', '0')
+      params.set('minStars', '1000')
       params.delete('page')
       router.push(`/?${params.toString()}`)
     }
   }
 
   function formatRange() {
+    const starsLabel = currentMinStars >= 1000 ? `${Math.floor(currentMinStars / 1000)}k+` : `${currentMinStars}+`
     if (currentTo === 0) {
-      return `최근 ${currentFrom}일`
+      return `최근 ${currentFrom}일 · ${starsLabel}`
     }
-    return `${currentFrom}일전 ~ ${currentTo}일전`
+    return `${currentFrom}일전 ~ ${currentTo}일전 · ${starsLabel}`
   }
 
   // Ensure from > to (from is further in the past)
@@ -152,11 +157,34 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
           <div className="mb-4 rounded-lg bg-zinc-100 p-3 text-center dark:bg-zinc-700">
             <span className="text-sm text-zinc-600 dark:text-zinc-300">
               {toDays === 0 ? (
-                <>최근 <strong className="text-emerald-600 dark:text-emerald-400">{fromDays}일</strong> 이슈</>
+                <>최근 <strong className="text-emerald-600 dark:text-emerald-400">{fromDays}일</strong> + ⭐ <strong className="text-emerald-600 dark:text-emerald-400">{minStars.toLocaleString()}+</strong></>
               ) : (
-                <><strong className="text-emerald-600 dark:text-emerald-400">{fromDays}일 전</strong> ~ <strong className="text-emerald-600 dark:text-emerald-400">{toDays}일 전</strong> 이슈</>
+                <><strong className="text-emerald-600 dark:text-emerald-400">{fromDays}일 전</strong> ~ <strong className="text-emerald-600 dark:text-emerald-400">{toDays}일 전</strong> + ⭐ <strong className="text-emerald-600 dark:text-emerald-400">{minStars.toLocaleString()}+</strong></>
               )}
             </span>
+          </div>
+
+          {/* Min stars */}
+          <div className="mb-4">
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span className="text-zinc-500">최소 Star</span>
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">{minStars.toLocaleString()}+</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[100, 500, 1000, 5000].map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => setMinStars(preset)}
+                  className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                    minStars === preset
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  {preset >= 1000 ? `${preset / 1000}k+` : `${preset}+`}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Quick presets */}
