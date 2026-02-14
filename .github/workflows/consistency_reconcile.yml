@@ -1,0 +1,57 @@
+name: Consistency Reconcile
+
+on:
+  schedule:
+    # 하루 2회 정합성 재동기화
+    - cron: '20 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: consistency-reconcile
+      cancel-in-progress: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd etl
+          pip install -r requirements.txt
+
+      - name: Reconcile with GitHub API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          cd etl
+          python fetch_issues_github.py
+
+      - name: Post-run DB health check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          cd etl
+          python - <<'PY'
+          import os
+          from supabase import create_client
+
+          sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+          r = sb.table("issues").select("id", count="exact").eq("is_open", True).limit(1).execute()
+          print(f"open_issues_count={r.count}")
+          PY

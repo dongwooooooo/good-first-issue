@@ -138,6 +138,35 @@ def upsert_issues(issues: list):
 
     # 배치로 upsert
     batch_size = 100
+    batch_ok = 0
+    row_fallback_ok = 0
+    row_fallback_failed = 0
+
+    def upsert_single_with_fallback(issue: dict) -> bool:
+        """단건 upsert. github_id 충돌 시 github_id 기준 update로 복구."""
+        nonlocal row_fallback_ok, row_fallback_failed
+        try:
+            supabase.from_("issues").upsert(
+                [issue],
+                on_conflict="url"
+            ).execute()
+            row_fallback_ok += 1
+            return True
+        except Exception as e:
+            message = str(e).lower()
+            if "github_id" in message or "idx_issues_github_id" in message:
+                try:
+                    supabase.from_("issues").update(issue).eq("github_id", issue["github_id"]).execute()
+                    row_fallback_ok += 1
+                    return True
+                except Exception as update_err:
+                    print(f"Fallback update failed (github_id={issue['github_id']}): {update_err}")
+            else:
+                print(f"Single upsert failed (github_id={issue['github_id']}): {e}")
+
+            row_fallback_failed += 1
+            return False
+
     for i in range(0, len(issues), batch_size):
         batch = issues[i:i + batch_size]
         transformed = [transform_issue(issue) for issue in batch]
@@ -147,11 +176,20 @@ def upsert_issues(issues: list):
                 transformed,
                 on_conflict="url"
             ).execute()
+            batch_ok += 1
             print(f"Upserted batch {i // batch_size + 1}/{(len(issues) - 1) // batch_size + 1}")
         except Exception as e:
             print(f"Error upserting batch: {e}")
+            # 배치 실패 시 레코드 단위로 재시도해 누락 최소화
+            for row in transformed:
+                upsert_single_with_fallback(row)
 
         time.sleep(0.5)
+
+    print(
+        f"Upsert summary: batch_ok={batch_ok}, "
+        f"row_fallback_ok={row_fallback_ok}, row_fallback_failed={row_fallback_failed}"
+    )
 
 
 def mark_closed_issues():
