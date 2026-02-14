@@ -75,6 +75,7 @@ async function getIssues(params: {
       .gte('created_at', fromDate.toISOString())
       .lte('created_at', toDate.toISOString())
       .gte('stars', minStars)
+      .order('created_at', { ascending: false })
       .order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'oldest') {
     query = query.order('created_at', { ascending: true })
