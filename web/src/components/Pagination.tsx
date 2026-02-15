@@ -38,14 +38,14 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
         <button
           onClick={() => goToPage(1)}
           disabled={currentPage === 1}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:border-blue-400 active:bg-blue-100 active:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-blue-500 dark:hover:bg-blue-950/40 dark:hover:text-blue-300 dark:active:border-blue-400 dark:active:bg-blue-900/50 dark:active:text-blue-200"
+          className="pagination-btn rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
         >
           ««
         </button>
         <button
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage === 1}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:border-blue-400 active:bg-blue-100 active:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-blue-500 dark:hover:bg-blue-950/40 dark:hover:text-blue-300 dark:active:border-blue-400 dark:active:bg-blue-900/50 dark:active:text-blue-200"
+          className="pagination-btn rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
         >
           «
         </button>
@@ -60,8 +60,8 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
             onClick={() => goToPage(page)}
             className={`rounded-md px-3 py-2 text-sm ${
               page === currentPage
-                ? 'bg-zinc-900 text-white transition-colors hover:bg-blue-700 active:bg-blue-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-blue-300 dark:active:bg-blue-400'
-                : 'border border-zinc-300 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:border-blue-400 active:bg-blue-100 active:text-blue-800 dark:border-zinc-700 dark:hover:border-blue-500 dark:hover:bg-blue-950/40 dark:hover:text-blue-300 dark:active:border-blue-400 dark:active:bg-blue-900/50 dark:active:text-blue-200'
+                ? 'pagination-btn border border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                : 'pagination-btn border border-zinc-300 dark:border-zinc-700'
             }`}
           >
             {page}
@@ -75,14 +75,14 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
         <button
           onClick={() => goToPage(currentPage + 1)}
           disabled={currentPage === totalPages}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:border-blue-400 active:bg-blue-100 active:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-blue-500 dark:hover:bg-blue-950/40 dark:hover:text-blue-300 dark:active:border-blue-400 dark:active:bg-blue-900/50 dark:active:text-blue-200"
+          className="pagination-btn rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
         >
           »
         </button>
         <button
           onClick={() => goToPage(totalPages)}
           disabled={currentPage === totalPages}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:border-blue-400 active:bg-blue-100 active:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-blue-500 dark:hover:bg-blue-950/40 dark:hover:text-blue-300 dark:active:border-blue-400 dark:active:bg-blue-900/50 dark:active:text-blue-200"
+          className="pagination-btn rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700"
         >
           »»
         </button>
