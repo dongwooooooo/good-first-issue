@@ -38,14 +38,14 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
         <button
           onClick={() => goToPage(1)}
           disabled={currentPage === 1}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
           ««
         </button>
         <button
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage === 1}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
           «
         </button>
@@ -61,7 +61,7 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
             className={`rounded-md px-3 py-2 text-sm ${
               page === currentPage
                 ? 'bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'
-                : 'border border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800'
+                : 'border border-zinc-300 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-700'
             }`}
           >
             {page}
@@ -75,14 +75,14 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
         <button
           onClick={() => goToPage(currentPage + 1)}
           disabled={currentPage === totalPages}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
           »
         </button>
         <button
           onClick={() => goToPage(totalPages)}
           disabled={currentPage === totalPages}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
         >
           »»
         </button>
