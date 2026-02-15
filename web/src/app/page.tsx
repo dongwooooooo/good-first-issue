@@ -548,7 +548,7 @@ function SortLinks({ view, current, searchParams }: {
           href={buildHref(opt.value)}
           className={`rounded-lg px-3 py-1 ${
             currentSort === opt.value
-              ? 'bg-zinc-200 font-medium text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100'
+              ? 'bg-zinc-200 font-medium text-zinc-900 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600'
               : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
           }`}
         >

@@ -28,7 +28,7 @@ export default function ViewToggle({ current }: { current: string }) {
           href={buildHref(v.value)}
           className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition ${
             current === v.value
-              ? 'bg-white text-zinc-900 shadow dark:bg-zinc-700 dark:text-zinc-100'
+              ? 'bg-white text-zinc-900 shadow hover:bg-zinc-50 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600'
               : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
           }`}
         >

@@ -70,12 +70,12 @@ export default function IssueCard({ issue }: { issue: Issue }) {
       </div>
 
       {/* Repo */}
-      <p className="mt-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+      <p className="mt-2 min-w-0 text-sm font-medium text-zinc-500 dark:text-zinc-400">
         {issue.repo_full_name}
       </p>
 
       {/* Title */}
-      <h3 className="mt-1 flex-1 font-medium leading-snug text-zinc-900 group-hover:text-blue-600 dark:text-zinc-100 dark:group-hover:text-blue-400">
+      <h3 className="mt-1 min-w-0 flex-1 break-words font-medium leading-snug text-zinc-900 [overflow-wrap:anywhere] group-hover:text-blue-600 dark:text-zinc-100 dark:group-hover:text-blue-400">
         {issue.title}
       </h3>
 

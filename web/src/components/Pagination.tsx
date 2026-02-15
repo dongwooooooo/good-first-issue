@@ -22,7 +22,7 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
   const pages: number[] = []
   const showPages = 5
   let start = Math.max(1, currentPage - Math.floor(showPages / 2))
-  let end = Math.min(totalPages, start + showPages - 1)
+  const end = Math.min(totalPages, start + showPages - 1)
 
   if (end - start + 1 < showPages) {
     start = Math.max(1, end - showPages + 1)
@@ -60,7 +60,7 @@ export default function Pagination({ currentPage, totalPages, total }: Paginatio
             onClick={() => goToPage(page)}
             className={`rounded-md px-3 py-2 text-sm ${
               page === currentPage
-                ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                ? 'bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'
                 : 'border border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800'
             }`}
           >
