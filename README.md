@@ -2,9 +2,7 @@
 
 **[start-opensource.dev](https://start-opensource.dev)**
 
-GitHub "Good First Issue"를 자동으로 수집하여 보여주는 오픈소스 기여 탐색 서비스입니다.
-
-언어, 레포지토리, 조직별로 필터링하고, 트렌딩 이슈를 빠르게 찾아 첫 오픈소스 기여를 시작하세요.
+Discover beginner-friendly GitHub issues and make your first open source contribution. We automatically collect "Good First Issue" labeled issues from across GitHub, updated every hour.
 
 ## How It Works
 
@@ -12,17 +10,17 @@ GitHub "Good First Issue"를 자동으로 수집하여 보여주는 오픈소스
 GH Archive (BigQuery)  →  GitHub Actions (hourly)  →  Supabase DB  →  Next.js (Vercel)
 ```
 
-- **GH Archive + BigQuery**: GitHub 전체 이벤트에서 `good first issue` 라벨이 붙은 이슈를 매시간 수집
-- **Supabase**: 수집된 이슈를 PostgreSQL에 저장하고 REST API로 제공
-- **Next.js**: SSR 기반 프론트엔드에서 검색, 필터, 정렬 기능 제공
+- **GH Archive + BigQuery**: Collects `good first issue` labeled issues from all GitHub events every hour
+- **Supabase**: Stores issues in PostgreSQL and serves them via REST API
+- **Next.js**: SSR frontend with search, filtering, and sorting
 
 ## Features
 
-- Issues / Repos / Orgs 3가지 뷰
-- 언어별 필터링 (TypeScript, Python, Go, Rust 등 20개+)
-- Trending 이슈 (기간, 최소 스타 수 조건)
-- 통합 검색 (이슈 제목, 레포지토리명)
-- 다크 모드 지원
+- Browse by Issues, Repositories, or Organizations
+- Filter by language (TypeScript, Python, Go, Rust, and 20+ more)
+- Trending issues with date range and minimum star filters
+- Unified search across issue titles and repository names
+- Dark mode support
 
 ## Tech Stack
 
@@ -37,13 +35,12 @@ GH Archive (BigQuery)  →  GitHub Actions (hourly)  →  Supabase DB  →  Next
 ## Getting Started
 
 ```bash
-# web
 cd web
 npm install
 npm run dev
 ```
 
-환경변수는 `.env.local`에 설정합니다:
+Set environment variables in `.env.local`:
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
