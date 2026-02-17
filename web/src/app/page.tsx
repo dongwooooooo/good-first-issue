@@ -1,5 +1,6 @@
 import { supabase, Issue } from '@/lib/supabase'
 import Link from 'next/link'
+import Image from 'next/image'
 import IssueCard from '@/components/IssueCard'
 import SearchBox from '@/components/SearchBox'
 import Pagination from '@/components/Pagination'
@@ -289,7 +290,7 @@ export default async function Home({
       <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2 font-bold text-zinc-900 dark:text-zinc-50">
-            <span className="text-xl">🚀</span>
+            <Image src="/favicon.png" alt="Start Open Source" width={24} height={24} />
             <span className="hidden sm:inline">Start Open Source</span>
           </Link>
           <span className="text-sm text-zinc-500">
