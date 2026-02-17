@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
+  icons: {
+    icon: "/favicon.png",
+    apple: "/favicon.png",
+  },
   title: {
     default: `${SITE_NAME} | Discover Good First Issues`,
     template: `%s | ${SITE_NAME}`,
