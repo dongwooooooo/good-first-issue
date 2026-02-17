@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useClickOutside } from '@/hooks/useClickOutside'
 
 interface Suggestion {
   type: string
@@ -51,16 +52,7 @@ export default function SearchBox({ defaultValue, placeholder }: { defaultValue?
     return () => clearTimeout(timer)
   }, [query])
 
-  // Click outside to close
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  useClickOutside(containerRef, () => setShowSuggestions(false))
 
   const handleSearch = (value: string) => {
     const params = new URLSearchParams(searchParams.toString())

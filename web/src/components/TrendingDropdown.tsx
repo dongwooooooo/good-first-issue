@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useClickOutside } from '@/hooks/useClickOutside'
 
 export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -9,7 +10,7 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // from: 며칠 전부터, to: 며칠 전까지 (0 = 오늘)
+  // from: days ago start, to: days ago end (0 = today)
   const currentFrom = parseInt(searchParams.get('from') || '30')
   const currentTo = parseInt(searchParams.get('to') || '0')
   const currentMinStars = parseInt(searchParams.get('minStars') || '1000')
@@ -18,15 +19,7 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
   const [toDays, setToDays] = useState(currentTo)
   const [minStars, setMinStars] = useState(currentMinStars)
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  useClickOutside(dropdownRef, () => setIsOpen(false))
 
   function applyFilter() {
     const params = new URLSearchParams(searchParams.toString())
@@ -61,9 +54,9 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
   function formatRange() {
     const starsLabel = currentMinStars >= 1000 ? `${Math.floor(currentMinStars / 1000)}k+` : `${currentMinStars}+`
     if (currentTo === 0) {
-      return `최근 ${currentFrom}일 · ${starsLabel}`
+      return `Last ${currentFrom}d · ${starsLabel}`
     }
-    return `${currentFrom}일전 ~ ${currentTo}일전 · ${starsLabel}`
+    return `${currentFrom}d ago ~ ${currentTo}d ago · ${starsLabel}`
   }
 
   // Ensure from > to (from is further in the past)
@@ -108,14 +101,14 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
       {isOpen && (
         <div className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
           <div className="mb-4 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-            기간 설정
+            Date Range
           </div>
 
           {/* From slider */}
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="text-zinc-500">시작</span>
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">{fromDays}일 전</span>
+              <span className="text-zinc-500">From</span>
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">{fromDays}d ago</span>
             </div>
             <input
               type="range"
@@ -126,17 +119,17 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
               className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-emerald-500 dark:bg-zinc-600"
             />
             <div className="mt-1 flex justify-between text-xs text-zinc-400">
-              <span>1일</span>
-              <span>1년</span>
+              <span>1d</span>
+              <span>1y</span>
             </div>
           </div>
 
           {/* To slider */}
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="text-zinc-500">종료</span>
+              <span className="text-zinc-500">To</span>
               <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                {toDays === 0 ? '오늘' : `${toDays}일 전`}
+                {toDays === 0 ? 'Today' : `${toDays}d ago`}
               </span>
             </div>
             <input
@@ -148,8 +141,8 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
               className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-zinc-200 accent-emerald-500 dark:bg-zinc-600"
             />
             <div className="mt-1 flex justify-between text-xs text-zinc-400">
-              <span>오늘</span>
-              <span>364일 전</span>
+              <span>Today</span>
+              <span>364d ago</span>
             </div>
           </div>
 
@@ -157,9 +150,9 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
           <div className="mb-4 rounded-lg bg-zinc-100 p-3 text-center dark:bg-zinc-700">
             <span className="text-sm text-zinc-600 dark:text-zinc-300">
               {toDays === 0 ? (
-                <>최근 <strong className="text-emerald-600 dark:text-emerald-400">{fromDays}일</strong> + ⭐ <strong className="text-emerald-600 dark:text-emerald-400">{minStars.toLocaleString()}+</strong></>
+                <>Last <strong className="text-emerald-600 dark:text-emerald-400">{fromDays}d</strong> + ⭐ <strong className="text-emerald-600 dark:text-emerald-400">{minStars.toLocaleString()}+</strong></>
               ) : (
-                <><strong className="text-emerald-600 dark:text-emerald-400">{fromDays}일 전</strong> ~ <strong className="text-emerald-600 dark:text-emerald-400">{toDays}일 전</strong> + ⭐ <strong className="text-emerald-600 dark:text-emerald-400">{minStars.toLocaleString()}+</strong></>
+                <><strong className="text-emerald-600 dark:text-emerald-400">{fromDays}d ago</strong> ~ <strong className="text-emerald-600 dark:text-emerald-400">{toDays}d ago</strong> + ⭐ <strong className="text-emerald-600 dark:text-emerald-400">{minStars.toLocaleString()}+</strong></>
               )}
             </span>
           </div>
@@ -167,7 +160,7 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
           {/* Min stars */}
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="text-zinc-500">최소 Star</span>
+              <span className="text-zinc-500">Min Stars</span>
               <span className="font-medium text-zinc-900 dark:text-zinc-100">{minStars.toLocaleString()}+</span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
@@ -190,11 +183,11 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
           {/* Quick presets */}
           <div className="mb-4 flex flex-wrap gap-1.5">
             {[
-              { label: '1주', from: 7, to: 0 },
-              { label: '1개월', from: 30, to: 0 },
-              { label: '3개월', from: 90, to: 0 },
-              { label: '6개월', from: 180, to: 0 },
-              { label: '1년', from: 365, to: 0 },
+              { label: '1w', from: 7, to: 0 },
+              { label: '1mo', from: 30, to: 0 },
+              { label: '3mo', from: 90, to: 0 },
+              { label: '6mo', from: 180, to: 0 },
+              { label: '1y', from: 365, to: 0 },
             ].map((preset) => (
               <button
                 key={preset.label}
@@ -215,7 +208,7 @@ export default function TrendingDropdown({ isActive }: { isActive: boolean }) {
             onClick={applyFilter}
             className="w-full rounded-lg bg-emerald-500 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600"
           >
-            적용하기
+            Apply
           </button>
         </div>
       )}

@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useClickOutside } from '@/hooks/useClickOutside'
+import { formatCount } from '@/lib/format'
 
 interface LanguageFilterProps {
   languages: { name: string; count: number }[]
@@ -17,15 +19,7 @@ export default function LanguageFilter({ languages, selected }: LanguageFilterPr
   const topLanguages = languages.slice(0, 6)
   const moreLanguages = languages.slice(6)
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowMore(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  useClickOutside(dropdownRef, () => setShowMore(false))
 
   const handleClick = (lang: string) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -37,13 +31,6 @@ export default function LanguageFilter({ languages, selected }: LanguageFilterPr
     params.delete('page')
     router.push(`/?${params.toString()}`)
     setShowMore(false)
-  }
-
-  const formatCount = (count: number) => {
-    if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}k`
-    }
-    return count.toString()
   }
 
   return (

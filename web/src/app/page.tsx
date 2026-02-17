@@ -7,6 +7,7 @@ import Pagination from '@/components/Pagination'
 import ViewToggle from '@/components/ViewToggle'
 import LanguageFilter from '@/components/LanguageFilter'
 import TrendingDropdown from '@/components/TrendingDropdown'
+import { sanitizeSearchParams } from '@/lib/sanitize'
 
 const PAGE_SIZE = 24
 
@@ -30,15 +31,15 @@ async function getIssues(params: {
   language?: string
   org?: string
   q?: string
-  page?: string
+  page?: string | number
   sort?: string
-  from?: string
-  to?: string
-  minStars?: string
+  from?: string | number
+  to?: string | number
+  minStars?: string | number
 }) {
   if (!supabase) return { issues: [], total: 0 }
 
-  const page = parseInt(params.page || '1')
+  const page = parseInt(String(params.page || '1'))
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
   const sort = params.sort || 'newest'
@@ -62,9 +63,9 @@ async function getIssues(params: {
     query = query.order('stars', { ascending: false, nullsFirst: false })
   } else if (sort === 'trending') {
     // Trending: stars order within selected date range + min stars
-    const fromDays = parseInt(params.from || '30')
-    const toDays = parseInt(params.to || '0')
-    const minStars = parseInt(params.minStars || '1000')
+    const fromDays = parseInt(String(params.from || '30'))
+    const toDays = parseInt(String(params.to || '0'))
+    const minStars = parseInt(String(params.minStars || '1000'))
 
     const fromDate = new Date()
     fromDate.setDate(fromDate.getDate() - fromDays)
@@ -99,11 +100,11 @@ async function getRepoGroups(params: {
   language?: string
   q?: string
   sort?: string
-  page?: string
+  page?: string | number
 }): Promise<{ repos: RepoGroup[]; total: number }> {
   if (!supabase) return { repos: [], total: 0 }
 
-  const page = parseInt(params.page || '1')
+  const page = parseInt(String(params.page || '1'))
   const pageSize = 30
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
@@ -144,11 +145,11 @@ async function getOrgGroups(params: {
   language?: string
   q?: string
   sort?: string
-  page?: string
+  page?: string | number
 }): Promise<{ orgs: OrgGroup[]; total: number }> {
   if (!supabase) return { orgs: [], total: 0 }
 
-  const page = parseInt(params.page || '1')
+  const page = parseInt(String(params.page || '1'))
   const pageSize = 30
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
@@ -226,8 +227,9 @@ export default async function Home({
     minStars?: string
   }>
 }) {
-  const params = await searchParams
-  const view = params.view || 'issues'
+  const rawParams = await searchParams
+  const params = sanitizeSearchParams(rawParams)
+  const view = rawParams.view || 'issues'
   const isUnifiedSearch = Boolean(params.q?.trim())
 
   const [languages, { totalIssues }] = await Promise.all([
@@ -270,7 +272,7 @@ export default async function Home({
 
   const total = view === 'repos' ? repoTotal : view === 'orgs' ? orgTotal : issueTotal
 
-  const currentPage = parseInt(params.page || '1')
+  const currentPage = parseInt(String(params.page || '1'))
   const pageSize = view === 'issues' ? PAGE_SIZE : 30
   const totalPages = Math.ceil(total / pageSize)
   const hasFilters = params.q || params.language || params.org
@@ -408,7 +410,11 @@ export default async function Home({
                       <>Latest issues</>
                     )}
                   </p>
-                  <SortLinks view="issues" current={params.sort} searchParams={params} />
+                  <SortLinks
+                    view="issues"
+                    current={params.sort}
+                    searchParams={{ language: params.language, q: params.q, org: params.org }}
+                  />
                 </div>
 
                 {issues.length > 0 ? (
@@ -491,10 +497,10 @@ export default async function Home({
   )
 }
 
-function FilterBadge({ label, paramToRemove, params }: { label: string; paramToRemove: string; params: Record<string, string | undefined> }) {
+function FilterBadge({ label, paramToRemove, params }: { label: string; paramToRemove: string; params: Record<string, string | number | undefined> }) {
   const newParams = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
-    if (key !== paramToRemove && value) newParams.set(key, value)
+    if (key !== paramToRemove && value !== undefined) newParams.set(key, String(value))
   })
   const href = newParams.toString() ? `/?${newParams.toString()}` : '/'
 
