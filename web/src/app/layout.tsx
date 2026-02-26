@@ -31,6 +31,15 @@ export const metadata: Metadata = {
     "beginner friendly issues",
     "github issues",
     "first contribution",
+    "open source contribution",
+    "beginner open source projects",
+    "help wanted issues",
+    "first pull request",
+    "open source for beginners",
+    "contribute to open source",
+    "github good first issue",
+    "starter issues",
+    "easy issues github",
   ],
   openGraph: {
     type: "website",
@@ -56,6 +65,7 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
     },
   },
+  manifest: "/manifest.json",
   verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
     ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
     : undefined,
@@ -71,6 +81,36 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@graph": [
+                {
+                  "@type": "WebSite",
+                  name: SITE_NAME,
+                  url: getSiteUrl(),
+                  description: SITE_DESCRIPTION,
+                  potentialAction: {
+                    "@type": "SearchAction",
+                    target: {
+                      "@type": "EntryPoint",
+                      urlTemplate: `${getSiteUrl()}/?search={search_term_string}`,
+                    },
+                    "query-input": "required name=search_term_string",
+                  },
+                },
+                {
+                  "@type": "Organization",
+                  name: SITE_NAME,
+                  url: getSiteUrl(),
+                  logo: `${getSiteUrl()}/favicon.png`,
+                },
+              ],
+            }),
+          }}
+        />
         {children}
         <Analytics />
       </body>

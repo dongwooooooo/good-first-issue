@@ -40,3 +40,4 @@ etl/google-cloud-sdk/
 !package.json
 !package-lock.json
 !tsconfig.json
+!web/public/manifest.json

@@ -8,6 +8,8 @@ import ViewToggle from '@/components/ViewToggle'
 import LanguageFilter from '@/components/LanguageFilter'
 import TrendingDropdown from '@/components/TrendingDropdown'
 import { sanitizeSearchParams } from '@/lib/sanitize'
+import type { Metadata } from 'next'
+import { getSiteUrl, SITE_NAME, SITE_DESCRIPTION } from '@/lib/site'
 
 const PAGE_SIZE = 24
 
@@ -210,6 +212,86 @@ async function getStats() {
     .select('*', { count: 'exact', head: true })
     .eq('is_open', true)
   return { totalIssues: count || 0 }
+}
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    view?: string
+    language?: string
+    org?: string
+    q?: string
+    page?: string
+  }>
+}): Promise<Metadata> {
+  const params = await searchParams
+  const { view, language, org, q, page } = params
+  const siteUrl = getSiteUrl()
+
+  // Build dynamic title
+  const parts: string[] = []
+  if (language) parts.push(language)
+  if (org) parts.push(org)
+  if (q) parts.push(`"${q}"`)
+
+  const viewLabel = view === 'repos' ? 'Repositories' : view === 'orgs' ? 'Organizations' : 'Good First Issues'
+
+  let title: string
+  if (parts.length > 0) {
+    title = `${parts.join(' ')} ${viewLabel}`
+  } else {
+    title = `Discover ${viewLabel}`
+  }
+
+  if (page && parseInt(page) > 1) {
+    title += ` - Page ${page}`
+  }
+
+  // Build dynamic description
+  let description: string
+  if (language && org) {
+    description = `Find beginner-friendly ${language} issues in ${org}. Browse open source good first issues to start contributing.`
+  } else if (language) {
+    description = `Find beginner-friendly ${language} open source issues. Browse good first issues to make your first contribution.`
+  } else if (org) {
+    description = `Explore good first issues from ${org}. Start contributing to open source with beginner-friendly issues.`
+  } else if (q) {
+    description = `Search results for "${q}" - find beginner-friendly open source issues matching your interests.`
+  } else {
+    description = SITE_DESCRIPTION
+  }
+
+  // Build canonical URL - only meaningful params
+  const canonicalParams = new URLSearchParams()
+  if (view && view !== 'issues') canonicalParams.set('view', view)
+  if (language) canonicalParams.set('language', language)
+  if (org) canonicalParams.set('org', org)
+  if (q) canonicalParams.set('q', q)
+  // Exclude page, sort, from, to, minStars from canonical
+  const canonical = canonicalParams.toString() ? `/?${canonicalParams.toString()}` : '/'
+
+  // noindex for deep pagination and empty-likely filter combos
+  const pageNum = parseInt(page || '1')
+  const shouldIndex = pageNum <= 10
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical,
+    },
+    robots: shouldIndex ? undefined : { index: false, follow: true },
+    openGraph: {
+      title: `${title} | ${SITE_NAME}`,
+      description,
+      url: canonical,
+    },
+    twitter: {
+      title: `${title} | ${SITE_NAME}`,
+      description,
+    },
+  }
 }
 
 export default async function Home({

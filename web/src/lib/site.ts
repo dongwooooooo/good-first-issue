@@ -2,7 +2,7 @@ export const SITE_NAME = 'Start Open Source'
 
 export function getSiteUrl(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (!raw) return 'https://good-first-issue.vercel.app'
+  if (!raw) return 'https://start-opensource.dev'
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
   return `https://${raw}`
 }
