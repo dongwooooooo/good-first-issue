@@ -4,7 +4,9 @@
 -- ============================================
 
 -- 1. Enable trigram extension for fuzzy search
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- extensions 스키마에 설치하여 public 스키마 노출 방지
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA extensions;
 
 -- 2. INDEXES for faster queries
 -- ============================================
@@ -119,13 +121,14 @@ CREATE OR REPLACE FUNCTION refresh_stats()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+SET search_path = public
+AS $func$
 BEGIN
     REFRESH MATERIALIZED VIEW CONCURRENTLY repo_stats;
     REFRESH MATERIALIZED VIEW CONCURRENTLY org_stats;
     REFRESH MATERIALIZED VIEW CONCURRENTLY language_stats;
 END;
-$$;
+$func$;
 
 GRANT EXECUTE ON FUNCTION refresh_stats TO authenticated;
 
@@ -149,35 +152,38 @@ RETURNS TABLE (
     count bigint
 )
 LANGUAGE plpgsql
-AS $$
+SET search_path = public
+AS $func$
 BEGIN
     RETURN QUERY
-    -- Repos matching
-    SELECT 
-        'repo'::text as type,
-        r.repo_full_name as value,
-        r.repo_full_name || ' (' || r.issue_count || ' issues)' as display,
-        r.issue_count::bigint as count
-    FROM repo_stats r
-    WHERE r.repo_full_name ILIKE '%' || search_term || '%'
-       OR similarity(r.repo_full_name, search_term) > 0.3
-    ORDER BY r.issue_count DESC
-    LIMIT max_results / 2
-
+    (
+        -- Repos matching
+        SELECT
+            'repo'::text as type,
+            r.repo_full_name as value,
+            r.repo_full_name || ' (' || r.issue_count || ' issues)' as display,
+            r.issue_count::bigint as count
+        FROM repo_stats r
+        WHERE r.repo_full_name ILIKE '%' || search_term || '%'
+           OR similarity(r.repo_full_name, search_term) > 0.3
+        ORDER BY r.issue_count DESC
+        LIMIT max_results / 2
+    )
     UNION ALL
-
-    -- Orgs matching
-    SELECT 
-        'org'::text as type,
-        o.org_name as value,
-        o.org_name || ' (' || o.repo_count || ' repos)' as display,
-        o.issue_count::bigint as count
-    FROM org_stats o
-    WHERE o.org_name ILIKE '%' || search_term || '%'
-       OR similarity(o.org_name, search_term) > 0.3
-    ORDER BY o.issue_count DESC
-    LIMIT max_results / 2;
+    (
+        -- Orgs matching
+        SELECT
+            'org'::text as type,
+            o.org_name as value,
+            o.org_name || ' (' || o.repo_count || ' repos)' as display,
+            o.issue_count::bigint as count
+        FROM org_stats o
+        WHERE o.org_name ILIKE '%' || search_term || '%'
+           OR similarity(o.org_name, search_term) > 0.3
+        ORDER BY o.issue_count DESC
+        LIMIT max_results / 2
+    );
 END;
-$$;
+$func$;
 
 GRANT EXECUTE ON FUNCTION search_autocomplete TO anon, authenticated;

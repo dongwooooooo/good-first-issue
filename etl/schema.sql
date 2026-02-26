@@ -34,7 +34,10 @@ CREATE POLICY "Public read access" ON issues
     FOR SELECT USING (true);
 
 -- 통계용 뷰 (대시보드에서 사용)
-CREATE OR REPLACE VIEW issue_stats AS
+-- security_invoker: 쿼리하는 유저의 권한으로 실행 (RLS 우회 방지)
+CREATE OR REPLACE VIEW issue_stats
+WITH (security_invoker = true)
+AS
 SELECT
     COUNT(*) as total_issues,
     COUNT(DISTINCT repo_full_name) as unique_repos,
